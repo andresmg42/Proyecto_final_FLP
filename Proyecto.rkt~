@@ -1,5 +1,4 @@
 #lang eopl
-
 ;******************************************************************************************
 ;Andres David Ortega Arteaga 2241885
 ;Jose Daniel Trujillo Suarez 2225611
@@ -101,7 +100,7 @@
     
     (expression
      ( "(" expression 
-           primitiva-binaria expression   ")")
+           binary-primitive expression   ")")
      primapp-bin-exp)
     
     (expression
@@ -149,18 +148,17 @@
     (expression ( "graph" "(" expression "," expression ")" ";") graph-exp)
     
     ; binary-Primitive-exp
-    (primitiva-binaria ("+") primitiva-suma)
-    (primitiva-binaria ("~") primitiva-resta)
-    (primitiva-binaria ("/") primitiva-div)
-    (primitiva-binaria ("*") primitiva-multi)
-    (primitiva-binaria ("concat") primitiva-concat)
-    (primitiva-binaria (">") primitiva-mayor)
-    (primitiva-binaria ("<") primitiva-menor)
-    (primitiva-binaria (">=") primitiva-mayor-igual)
-    (primitiva-binaria ("<=") primitiva-menor-igual)
-    (primitiva-binaria ("!=") primitiva-diferente)
-    (primitiva-binaria ("==") primitiva-comparador-igual)
-
+    (binary-primitive ("+") primitive-sum);operacion binaria para sumar
+    (binary-primitive ("~") primitive-substract);operacion binaria para restar
+    (binary-primitive ("*") primitive-mult);operacion binaria para multiplicar
+    (binary-primitive ("/") primitive-div);operacion binaria para dividir
+    (binary-primitive ("concat") primitive-con);operacion binaria para concatenar 
+    (binary-primitive (">" ) primitive-greater);operacion binaria booleana para el operador logico ">"
+    (binary-primitive ("<" ) primitive-minor);operacion binaria booleana para el operador logico "<"
+    (binary-primitive (">=" ) primitive-greater-equal);operacion binaria booleana para el operador logico ">="
+    (binary-primitive ("<=" ) primitive-minor-equal);operacion binaria booleana para el operador logico "<="
+    (binary-primitive ("!=" ) primitive-diferent);operacion binaria booleana para el operador logico "!="
+    (binary-primitive ("==" ) primitive-comparator-equal);operacion binaria booleana para el operador logico "=="
     
     ;unary-primitive-exp
     (unary-primitive ("length") primitive-lenght);operacion unaria para calcula longitud de un string
@@ -178,93 +176,6 @@
               proc-type-exp)
     
     ))
-
-;Funcion que resuelve las operaciones de cada primitiva binaria 
-;apply-binary-primitive: <primitiva> <list-of-expression> -> numero
-;apply-primitive: <primitiva> <list-of-expression> -> numero
-
-
-(define apply-primitive-bin
-  (lambda (prim-bin args)
-    (cases primitiva-binaria prim-bin
-      (primitiva-suma () (+ (car args) (cadr args)))
-      (primitiva-resta () (- (car args) (cadr args)))
-      (primitiva-div () (/ (car args) (cadr args)))
-      (primitiva-multi () (* (car args) (cadr args)))
-      (primitiva-concat () (string-append (car args) (cadr args)))
-      (primitiva-mayor () (valor-verdad? (comparar (car args) (cadr args) '>)))
-      (primitiva-menor () (valor-verdad? (comparar (car args) (cadr args) '<)))
-      (primitiva-mayor-igual () (valor-verdad? (comparar (car args) (cadr args) '>=)))
-      (primitiva-menor-igual () (valor-verdad? (comparar (car args) (cadr args) '<=)))
-      (primitiva-diferente () (valor-verdad? (not (eqv? (car args) (cadr args)))))
-      (primitiva-comparador-igual () (valor-verdad? (equal? (car args) (cadr args))))
- 
-      
-      
-                       
-      )))
-
-;Funcion que resuelve las operaciones de cada primitiva unaria
-;apply-unary-primitive: <primitiva> <list-of-expression> -> numero
-(define apply-unary-primitive
-  (lambda (prim arg)
-    (cases unary-primitive prim
-      (primitive-lenght () (string-length arg))
-      (primitive-add1 () (+ 1 arg))
-      (primitive-sub1 () (- arg 1))
-      (primitive-neg-boolean () (if (eqv? arg "true") "false"
-                                    "true"))
-      )))
-
-
-
-
-#|(define conver-to-ASCII
-  (lambda(palabra)
-    (map char->integer (string->list palabra))
-  )
-)
-|#
-
-(define comparar-strings?
-  (lambda (string1 string2 comparador)
-    (cond
-        [(equal? comparador '<) (string<? string1 string2)]
-        [(equal? comparador '>) (string>? string1 string2)]
-        [(equal? comparador '>=) (string>=? string1 string2)]
-        [(equal? comparador '<=) (string<=? string1 string2)]
-        [else (eopl:error "no se pueden comparar los strings")])))
-        
-(define comparar-numeros?
-  (lambda (num1 num2 comparador)
-    (cond
-        [(equal? comparador '<) (< num1 num2)]
-        [(equal? comparador '>) (> num1 num2)]
-        [(equal? comparador '>=) (>= num1 num2)]
-        [(equal? comparador '<=) (<= num1 num2)]
-        [else (eopl:error "no se pueden comparar los numeros")])))        
-    
-
-(define comparar
-  (lambda (e1 e2 comparador)
-    (cond
-      [(and (string? e1) (string? e2)) (comparar-strings? e1 e2 comparador)]
-      [(and (number? e1) (number? e2)) (comparar-numeros? e1 e2 comparador)]
-      [else (eopl:error "valor esperado, dos strings o dos flotantes")])))
-       
-
-
-;Funcione que retorna 1 si una operacion binaria es verdadera, o 0 si
-;la exprecion es falsa
-;valor_verdad?: primitiva-binaria x expression x expression => number
-;usage:(valor-verdad? prim exp1 exp2) => 1 si al aplicar la primitiva a
-;los 2 argumentos el valor es diferente a 0, 0 de caso contrario
-
-
-(define valor-verdad?
-  (lambda (bool)
-    (if bool "true" "false")))
-
 
 ;Tipos de datos para la sintaxis abstracta de la gramática
 ;Construidos automáticamente:
@@ -325,8 +236,39 @@
   (lambda (rand env)
     (eval-expression rand env)))
 
+;Funcion que resuelve las operaciones de cada primitiva unaria
+;apply-unary-primitive: <primitiva> <list-of-expression> -> numero
+(define apply-unary-primitive
+  (lambda (prim arg)
+    (cases unary-primitive prim
+      (primitive-lenght () (string-length arg))
+      (primitive-add1 () (+ 1 arg))
+      (primitive-sub1 () (- arg 1))
+      (primitive-neg-boolean () (if (eqv? arg 0) 1
+                                    0))
+      )))
 
-        
+;Funcion que resuelve las operaciones de cada primitiva binaria 
+;apply-binary-primitive: <primitiva> <list-of-expression> -> numero
+(define apply-binary-primitive
+  (lambda (prim arg1 arg2)
+    (cases binary-primitive prim
+      (primitive-sum () (+ arg1 arg2))
+      (primitive-substract () (- arg1 arg2))
+      (primitive-mult () (* arg1 arg2))
+      (primitive-div ()
+                     (if (equal? arg2 0)"Division por cero"
+                         (/ arg1 arg2)))
+      (primitive-con () (string-append arg1 arg2))
+      
+      (primitive-greater () (valor-verdad? prim arg1 arg2))
+      (primitive-minor () (valor-verdad? prim arg1 arg2))    
+      (primitive-greater-equal () (valor-verdad? prim arg1 arg2))
+      (primitive-minor-equal () (valor-verdad? prim arg1 arg2))
+      (primitive-diferent () (valor-verdad? prim arg1 arg2))
+      (primitive-comparator-equal () (valor-verdad? prim arg1 arg2))
+      )))
+
 ;Funcion que extiende un ambiente y evalua un procedimiento en ese nuevo ambiente extendido
 ;apply-procedure: <procedure> <list-of expression> -> numero
 (define apply-procedure
@@ -340,6 +282,14 @@
 (define true-value?
   (lambda (x)
     (not (zero? x))))
+
+;define-datatypes------------------------------------------------------------------
+(define-datatype pareja pareja?
+  (pair (first symbol?)
+        (second symbol?))
+)
+
+(define pareja1 (pair 'a 'b))
 
 
 ;-------------------------------------------------------------------------------------------
@@ -427,7 +377,37 @@
                 (+ list-index-r 1)
                 #f))))))
 
+;Funcione que retorna 1 si una operacion binaria es verdadera, o 0 si
+;la exprecion es falsa
+;valor_verdad?: primitiva-binaria x expression x expression => number
+;usage:(valor-verdad? prim exp1 exp2) => 1 si al aplicar la primitiva a
+;los 2 argumentos el valor es diferente a 0, 0 de caso contrario
 
+
+(define valor-verdad?
+  (lambda (prim arg1 arg2)
+    (cases binary-primitive prim
+      
+      (primitive-greater () ())
+      
+      (primitive-minor () (if (< (- arg1 arg2) 0) 1
+                             0))
+      
+      (primitive-greater-equal () (if (>= (- arg1 arg2) 0) 1
+                             0))
+      
+      (primitive-minor-equal () (if (<= (- arg1 arg2) 0) 1
+                             0))
+      
+      (primitive-diferent () (not(equal? arg1 arg2)))
+      
+      (primitive-comparator-equal () (equal? arg1 arg2))
+      (else (if
+             (not(equal? (apply-binary-primitive prim arg1 arg2) 0))1
+             0))
+    )
+  )
+)
 
 ;Funcion que convierte a string numeros y simbolos
 ;convert-to-string: a => string
@@ -445,7 +425,7 @@
 ;Funcion que retorna la concatenacion de 2 valores
 ;concat: a x b => String
 ;usage: (concat a  b) => String ab
-#|(define concatenar
+(define concatenar
   (lambda (a b)
     (cond
       ((and (not(string? a)) (not(string? b)))
@@ -458,17 +438,13 @@
     )
   )
 )
-|#
+
 
 (define conver-to-ASCII
   (lambda(palabra)
     (map char->integer (string->list palabra))
   )
 )
-
-
-        
-         
 
 
 ;eval-expression: <expression> <enviroment> -> numero
@@ -487,9 +463,9 @@
                    (apply-unary-primitive prim arg)))
       
       (primapp-bin-exp (exp1 prim exp2)
-                  (let ((arg1 (eval-expression exp1 env))
-                        (arg2 (eval-expression exp2 env)))
-                    (apply-primitive-bin prim (list arg1 arg2))))
+                  (let ((arg1 (eval-rand exp1 env))
+                        (arg2 (eval-rand exp2 env)))
+                    (apply-binary-primitive prim arg1 arg2)))
       
       (if-exp(test-exp true-exp false-exp)
              (if(true-value? (eval-expression test-exp env))
