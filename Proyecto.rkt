@@ -133,8 +133,16 @@
         "in" expression) 
     letrec-exp)
 
-    (expression ( "list" "<"type-exp">" identifier "=" "[" (separated-list expression ",")"]"";") list-exp)
+   ;PARTES DE LAS LISTAS
+    (expression
+     ("[" (separated-list expression ",") "]")
+     list-exp)
 
+    ;; Primitiva empty para representar una lista vacía
+    (expression
+     ("[]")
+     empty-list-exp)
+    
     (expression ( "vect" "<"type-exp ">" identifier "=" "("(separated-list expression ",")")"";") vect-exp)
 
     (expression ( "dict" "<"type-exp "," type-exp">" identifier "="
@@ -147,6 +155,9 @@
     (expression ( "vertices" "(" (separated-list identifier ",") ")") vertices-exp)
 
     (expression ( "graph" "(" expression "," expression ")" ";") graph-exp)
+
+    
+    
     
     ; binary-Primitive-exp
     (primitiva-binaria ("+") primitiva-suma)
@@ -160,6 +171,7 @@
     (primitiva-binaria ("<=") primitiva-menor-igual)
     (primitiva-binaria ("!=") primitiva-diferente)
     (primitiva-binaria ("==") primitiva-comparador-igual)
+    (primitiva-binaria("append" "(" identifier "," identifier ")")append-exp);;---------------------------
 
     
     ;unary-primitive-exp
@@ -167,15 +179,24 @@
     (unary-primitive ("add1") primitive-add1);operacion unaria hallar el sucesor de un numero
     (unary-primitive ("sub1") primitive-sub1);operacion unaria hallar el predecesor de un numero
     (unary-primitive ("neg") primitive-neg-boolean);operacion que niega el valor de un booleano
+    (unary-primitive("empty?") primitive-empty);;----------------------------------
+    (unary-primitive("list?") primitive-list)
+    (unary-primitive("head") primitive-head)
+    (unary-primitive("tail")primitive-tail)
+    (unary-primitive("make-list") primitive-make)
 
     ;caracteristicas adicionales
+    (type-exp ("list" "<" type-exp ">") list-type-exp)
     (primitive ("zero?") zero-test-prim)    
     (type-exp ("int") int-type-exp)
     (type-exp ("float") float-type-exp)
     (type-exp ("String") String-type-exp)
     (type-exp ("bool") bool-type-exp)
-    (type-exp ("(" (separated-list type-exp "*") "->" type-exp ")")
-              proc-type-exp)
+    (type-exp ("(" (separated-list type-exp "*") "->" type-exp ")") proc-type-exp)
+    (type-exp ("list<int>") list-int-type)
+    (type-exp ("list<float>") list-float-type)
+    (type-exp ("list<bool>") list-bool-type)
+    (type-exp ("list<strign>") list-string-type)
     
     ))
 
@@ -198,6 +219,8 @@
       (primitiva-menor-igual () (valor-verdad? (comparar (car args) (cadr args) '<=)))
       (primitiva-diferente () (valor-verdad? (not (eqv? (car args) (cadr args)))))
       (primitiva-comparador-igual () (valor-verdad? (equal? (car args) (cadr args))))
+      
+      (else "faltan casos bianrio")
  
       
       
@@ -214,6 +237,11 @@
       (primitive-sub1 () (- arg 1))
       (primitive-neg-boolean () (if (eqv? arg "true") "false"
                                     "true"))
+      (primitive-empty () (valor-verdad? (equal? (car arg) "[]")))
+      (primitive-head () (car arg))
+      (primitive-tail () (cdr arg))
+      ;;falta primitive list?
+      (else "faltan casos unario")
       )))
 
 
@@ -460,11 +488,11 @@
 )
 |#
 
-(define conver-to-ASCII
+#|(define conver-to-ASCII
   (lambda(palabra)
     (map char->integer (string->list palabra))
   )
-)
+)|#
 
 
         
@@ -482,8 +510,9 @@
       (text-exp (text) text)
       (true-exp () "true")
       (false-exp () "false")
+      (empty-list-exp () "[]")
       (primapp-un-exp (prim rand)
-                  (let ((arg (eval-rand rand env)))
+                  (let ((arg (eval-expression rand env)))
                    (apply-unary-primitive prim arg)))
       
       (primapp-bin-exp (exp1 prim exp2)
@@ -518,8 +547,11 @@
                   (eval-expression letrec-body
                                    (extend-env-recursively proc-names ids proc-bodies env))
                   )
+      ;;faltan algunos cambios----------------------------
+      (list-exp (args)
+                (eval-rands args env))
 
-      (else "faltan casos")
+      (else "faltan casos eval-expression")
       )    
     ))
 
