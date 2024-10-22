@@ -13,8 +13,8 @@ INDICES DE BLOQUES DEL CODIGO
 6) ENVIRONMENTS-FUNTIONS
 7) AUXILIAR-FUNTIONS
 8) EXPRESSION-EVALUATOR
-|#
 
+|#
 ;;;;; Interpretador para lenguaje con condicionales y ligadura local
 
 ;; La definición BNF para las expresiones del lenguaje:
@@ -107,20 +107,18 @@ INDICES DE BLOQUES DEL CODIGO
     (expression ("const" type-exp identifier "=" expression ";") conts-exp)
     
     (expression 
+     
     (unary-primitive "(" expression ")")
      primapp-un-exp)
     
     (expression
-     ( "app-prim(" expression 
-           primitiva-binaria expression ")")
+     ( "do (" expression 
+           primitiva-binaria expression   ")")
      primapp-bin-exp)
 
     (expression
      (make-primitive "(" expression expression ")")
-     primapp-make-vector-exp)
-
-    (expression (make-list-primitive "(" (arbno expression) ")")
-                primapp-make-list-exp)
+     primapp-make-exp)
     
     (expression
      ("\"" text "\"" )
@@ -150,10 +148,10 @@ INDICES DE BLOQUES DEL CODIGO
       (arbno identifier "(" (separated-list identifier ",") ")" "=" expression)
         "in" expression) 
     letrec-exp)
-  
-    ;PARTES DE LAS LISTAS
+
+   ;PARTES DE LAS LISTAS
     (expression
-     ("(" (separated-list expression ",") ")")
+     ("(" (separated-list expression ",") ")" ";")
      list-exp)
 
     ;;Primitiva empty para representar una lista vacía
@@ -162,11 +160,11 @@ INDICES DE BLOQUES DEL CODIGO
      empty-list-exp)
 
     ;PARTES DE VECTORES
-    (expression ("["(separated-list expression ",")"]" ) vect-exp)
+    (expression ("["(separated-list expression ",")"]" ";") vect-exp)
 
     ;PARTES DE DICCIONARIOS
     (expression ("{"(arbno "\"" text "\"" ":" expression ",") 
-                   "}") dict-exp)
+                   "}"";") dict-exp)
 
     ;PARTES DE GRAFOS
     (expression ( "edges" "(" (arbno "(" identifier "," identifier ")" ) ")") edge-exp)
@@ -203,12 +201,11 @@ INDICES DE BLOQUES DEL CODIGO
     (unary-primitive("list?") primitive-list)
     (unary-primitive("head") primitive-head)
     (unary-primitive("tail")primitive-tail)
+    ;(unary-primitive("make-list") primitive-make)
 
-
-    ;make-list-primitive
-    (make-list-primitive ("make-list") make-l-primitive)
-    
-    (make-vector-primitive ("make-vector") make-v-primitive)
+    ;make-primitives
+    (make-primitive ("make-list") make-list-primitive)
+    (make-primitive ("make-vector") make-vector-primitive)
     (make-primitive ("make-dict") make-dict-primitive)
     
     ;caracteristicas adicionales
@@ -255,7 +252,11 @@ INDICES DE BLOQUES DEL CODIGO
       (primitiva-diferente () (valor-verdad? (not (eqv? (car args) (cadr args)))))
       (primitiva-comparador-igual () (valor-verdad? (equal? (car args) (cadr args))))
       
-      (else "faltan casos bianrio")                 
+      (else "faltan casos bianrio")
+ 
+      
+      
+                       
       )))
 
 ;Funcion que resuelve las operaciones de cada primitiva unaria
@@ -271,25 +272,19 @@ INDICES DE BLOQUES DEL CODIGO
       (primitive-empty () (valor-verdad? (equal? (car arg) "[]")))
       (primitive-head () (car arg))
       (primitive-tail () (cdr arg))
-      ;1(primitive-make () ())
+      ;(primitive-make () ())
       ;;falta primitive list?
       (else "faltan casos unario")
       )))
 
 
-(define apply-make-l-primitive
-  (lambda (prim args)
-    (cases make-list-primitive prim 
-      (make-l-primitive () (make-list args))
-    )
-  )
-)
 
-
-(define apply-make-v-primitive
+(define apply-make-primitive
   (lambda (prim size value)
-    (cases make-vector-primitive prim   
-      (make-v-primitive () (make-sequence size value "vector"))
+    (cases make-primitive prim
+      (make-list-primitive () (make-sequence size value "list"))
+      (make-vector-primitive () (make-sequence size value "vector"))
+      (make-dict-primitive () "FALTA IMPLEMENTACION")
       )
     )
 )
@@ -532,13 +527,14 @@ INDICES DE BLOQUES DEL CODIGO
 ;definida en la gramatica, de tamaño n e inicializadas con valores v
 ;make-list: number x valor => string
 ;usage: (make-list n v) => string [v1,v2,v3.......v2]
-
 (define make-sequence
   (lambda (size value idetifier)
     (if (= size 0) "[]"
         (cond
+          ((equal? idetifier "list")
+           (string-append  "(" (separator-comma size value) ");" ))
           ((equal? idetifier "vector")
-           (string-append  "[" (separator-comma size value) "]" ))
+           (string-append  "[" (separator-comma size value) "];" ))
           )
         )
   )
@@ -555,30 +551,6 @@ INDICES DE BLOQUES DEL CODIGO
         )    
   )
 )
-
-
-(define make-list
-  (lambda (list)
-    (if (null? list) "()"
-        (string-append  "("(separator-comma-list list)")" )
-        )
-  )
-)
-
-
-
-(define separator-comma-list
-  (lambda (list)
-    (if (null? list) ""
-        (if (null? (cdr list))
-            (string-append (convert-to-string (car list)))
-            (string-append (convert-to-string (car list)) ","
-                       (separator-comma-list (cdr list)))
-        )
-    )       
-  )
-)
-
 
 ;Funcion que retorna la concatenacion de 2 valores
 ;concat: a x b => String
@@ -621,7 +593,7 @@ INDICES DE BLOQUES DEL CODIGO
       (text-exp (text) text)
       (true-exp () "true")
       (false-exp () "false")
-      (empty-list-exp () "()")
+      (empty-list-exp () "[]")
       (primapp-un-exp (prim rand)
                   (let ((arg (eval-expression rand env)))
                    (apply-unary-primitive prim arg)))
@@ -631,12 +603,12 @@ INDICES DE BLOQUES DEL CODIGO
                         (arg2 (eval-expression exp2 env)))
                     (apply-primitive-bin prim (list arg1 arg2))))
 
-      (primapp-make-vector-exp(prim arg1 arg2)
+      (primapp-make-exp(prim arg1 arg2)
                   (let(
                        (size (eval-expression arg1 env))
                        (value (eval-expression arg2 env))
                        )
-                    (apply-make-v-primitive prim size value)
+                    (apply-make-primitive prim size value)
                       )
        )
       (if-exp(test-exp true-exp false-exp)
@@ -669,16 +641,6 @@ INDICES DE BLOQUES DEL CODIGO
       ;;faltan algunos cambios----------------------------
       (list-exp (args)
                 (eval-rands args env))
-
-      (primapp-make-list-exp(prim args)
-                    (let(
-                         (lista (eval-rands args env))  
-                         )
-                      (if (equal? (car lista) "empty") "()"
-                          (apply-make-l-primitive prim lista)
-                          )
-                        )                           
-                    )
 
       (else "faltan casos eval-expression")
       )    
