@@ -1,4 +1,6 @@
 #lang eopl
+(require racket/format)
+
 
 ;******************************************************************************************
 ;Andres David Ortega Arteaga 2241885
@@ -61,6 +63,7 @@
 
 ;******************************************************************************************
 
+
 ;Especificación Léxica
 (define scanner-spec-simple-interpreter
 '((white-sp
@@ -94,14 +97,10 @@
 
     (expression ("const" type-exp identifier "=" expression ";") conts-exp)
     
-    (expression 
-     
-    (unary-primitive "(" expression ")")
-     primapp-un-exp)
+    (expression (unary-primitive "(" (arbno expression) ")") primapp-un-exp)
     
     (expression
-     ( "(" expression 
-           primitiva-binaria expression   ")")
+     ( "/" expression primitiva-binaria expression "/")
      primapp-bin-exp)
     
     (expression
@@ -134,21 +133,21 @@
     letrec-exp)
 
    ;PARTES DE LAS LISTAS
-    (expression
-     ("[" (separated-list expression ",") "]")
-     list-exp)
+    (expression ("(" (separated-list expression ",") ")") list-exp)
+
+    (expression ("["  (separated-list expression ",") "]") vec-exp)
+
+   
+   
+
+    ;(expression (unary-primitive "(" (arbno expression) ")") data-structure-exp)
+
+    
 
     ;; Primitiva empty para representar una lista vacía
-    (expression
-     ("[]")
-     empty-list-exp)
-    
-    (expression ( "vect" "<"type-exp ">" identifier "=" "("(separated-list expression ",")")"";") vect-exp)
+    (expression ("()") empty-list-exp)
 
-    (expression ( "dict" "<"type-exp "," type-exp">" identifier "="
-                         "{"
-                         (arbno "\"" text "\"" ":" expression ",") 
-                         "}"";") dict-exp)
+    (expression ("[]") empty-vec-exp)
     
     (expression ( "edges" "(" (arbno "(" identifier "," identifier ")" ) ")") edge-exp)
 
@@ -171,7 +170,8 @@
     (primitiva-binaria ("<=") primitiva-menor-igual)
     (primitiva-binaria ("!=") primitiva-diferente)
     (primitiva-binaria ("==") primitiva-comparador-igual)
-    (primitiva-binaria("append" "(" identifier "," identifier ")")append-exp);;---------------------------
+    (primitiva-binaria ("append-list") primitiva-append-list)
+  
 
     
     ;unary-primitive-exp
@@ -180,10 +180,18 @@
     (unary-primitive ("sub1") primitive-sub1);operacion unaria hallar el predecesor de un numero
     (unary-primitive ("neg") primitive-neg-boolean);operacion que niega el valor de un booleano
     (unary-primitive("empty?") primitive-empty);;----------------------------------
-    (unary-primitive("list?") primitive-list)
+    (unary-primitive("list?") primitive-list);;falta
     (unary-primitive("head") primitive-head)
     (unary-primitive("tail")primitive-tail)
-    (unary-primitive("make-list") primitive-make)
+    (unary-primitive ("make-list") primitive-make-list)
+    (unary-primitive ("make-vec") primitive-make-vec)
+    (unary-primitive ("make-vec-zise") primitive-make-vec-zise)
+    (unary-primitive ("ref-vector") primitive-ref-vector)
+    (unary-primitive ("set-vector") primitive-set-vector)
+    (unary-primitive ("append-vector") primitive-append-vector)
+    (unary-primitive ("delete-val-vector") primitive-delete-vec)
+    
+    
 
     ;caracteristicas adicionales
     (type-exp ("list" "<" type-exp ">") list-type-exp)
@@ -197,6 +205,7 @@
     (type-exp ("list<float>") list-float-type)
     (type-exp ("list<bool>") list-bool-type)
     (type-exp ("list<strign>") list-string-type)
+    
     
     ))
 
@@ -219,8 +228,9 @@
       (primitiva-menor-igual () (valor-verdad? (comparar (car args) (cadr args) '<=)))
       (primitiva-diferente () (valor-verdad? (not (eqv? (car args) (cadr args)))))
       (primitiva-comparador-igual () (valor-verdad? (equal? (car args) (cadr args))))
-      
-      (else "faltan casos bianrio")
+      (primitiva-append-list () (append-list args))
+    
+       (else "faltan casos bianrio")
  
       
       
@@ -232,54 +242,52 @@
 (define apply-unary-primitive
   (lambda (prim arg)
     (cases unary-primitive prim
-      (primitive-lenght () (string-length arg))
-      (primitive-add1 () (+ 1 arg))
-      (primitive-sub1 () (- arg 1))
-      (primitive-neg-boolean () (if (eqv? arg "true") "false"
+      (primitive-lenght () (string-length (car arg)))
+      (primitive-add1 () (+ 1 (car arg)))
+      (primitive-sub1 () (- (car arg) 1))
+      (primitive-neg-boolean () (if (eqv? (car arg) "true") "false"
                                     "true"))
       (primitive-empty () (valor-verdad? (equal? (car arg) "[]")))
       (primitive-head () (car arg))
       (primitive-tail () (cdr arg))
       ;;falta primitive list?
+      ;;falta vector?
+      (primitive-make-list () (make-struct arg 'list))
+      (primitive-make-vec () (make-struct arg 'vector))
+      (primitive-make-vec-zise () (make-vec-zise arg))
+      (primitive-ref-vector () (vector-ref (car arg) (cadr arg)))
+      (primitive-set-vector () (let (
+                                     ( v (vector-set! (car arg) (cadr arg) (caddr arg)))
+                                     )
+                                      (make-struct (vector->list (car arg)) 'vector)
+                                     ))
+      (primitive-append-vector () (let(
+
+                                       (l (append (vector->list (car arg)) (cdr arg)))
+
+
+                                       )(make-struct l 'vector)))
+      (primitive-delete-vec () (let(
+                                   (l (eliminar-pos (vector->list (car arg)) (cadr arg) 0))
+
+                                    )
+                                 (make-struct l 'vector)))
+                                    
+                                                    
       (else "faltan casos unario")
       )))
 
 
-
-
-#|(define conver-to-ASCII
-  (lambda(palabra)
-    (map char->integer (string->list palabra))
-  )
-)
-|#
-
-(define comparar-strings?
-  (lambda (string1 string2 comparador)
-    (cond
-        [(equal? comparador '<) (string<? string1 string2)]
-        [(equal? comparador '>) (string>? string1 string2)]
-        [(equal? comparador '>=) (string>=? string1 string2)]
-        [(equal? comparador '<=) (string<=? string1 string2)]
-        [else (eopl:error "no se pueden comparar los strings")])))
-        
-(define comparar-numeros?
-  (lambda (num1 num2 comparador)
-    (cond
-        [(equal? comparador '<) (< num1 num2)]
-        [(equal? comparador '>) (> num1 num2)]
-        [(equal? comparador '>=) (>= num1 num2)]
-        [(equal? comparador '<=) (<= num1 num2)]
-        [else (eopl:error "no se pueden comparar los numeros")])))        
-    
-
-(define comparar
-  (lambda (e1 e2 comparador)
-    (cond
-      [(and (string? e1) (string? e2)) (comparar-strings? e1 e2 comparador)]
-      [(and (number? e1) (number? e2)) (comparar-numeros? e1 e2 comparador)]
-      [else (eopl:error "valor esperado, dos strings o dos flotantes")])))
-       
+ (define eliminar-pos
+   (lambda (arg pos acc)
+     (if (null? arg) '()
+         (cond
+           [(not (equal? acc pos)) (cons (car arg) (eliminar-pos (cdr arg) pos (+ acc 1)))]
+           [(and (equal? acc pos) (not (null? (cdr arg)))) (cons (cadr arg) (eliminar-pos (cddr arg) pos (+ acc 2)))]
+           [else '()]
+           ))))
+         
+     
 
 
 ;Funcione que retorna 1 si una operacion binaria es verdadera, o 0 si
@@ -470,34 +478,93 @@
   )
 )
 
-;Funcion que retorna la concatenacion de 2 valores
-;concat: a x b => String
-;usage: (concat a  b) => String ab
-#|(define concatenar
-  (lambda (a b)
+(define comparar-strings?
+  (lambda (string1 string2 comparador)
     (cond
-      ((and (not(string? a)) (not(string? b)))
-       (string-append (convert-to-string a) (convert-to-string b)))
-      ((and (string? a) (not(string? b)))
-       (string-append a (convert-to-string b)))
-      ((and (not(string? a)) (string? b))
-       (string-append (convert-to-string a) b))
-      (else (string-append a b))
-    )
-  )
-)
-|#
+        [(equal? comparador '<) (string<? string1 string2)]
+        [(equal? comparador '>) (string>? string1 string2)]
+        [(equal? comparador '>=) (string>=? string1 string2)]
+        [(equal? comparador '<=) (string<=? string1 string2)]
+        [else (eopl:error "no se pueden comparar los strings")])))
+        
+(define comparar-numeros?
+  (lambda (num1 num2 comparador)
+    (cond
+        [(equal? comparador '<) (< num1 num2)]
+        [(equal? comparador '>) (> num1 num2)]
+        [(equal? comparador '>=) (>= num1 num2)]
+        [(equal? comparador '<=) (<= num1 num2)]
+        [else (eopl:error "no se pueden comparar los numeros")])))        
+    
 
-#|(define conver-to-ASCII
-  (lambda(palabra)
-    (map char->integer (string->list palabra))
-  )
-)|#
+(define comparar
+  (lambda (e1 e2 comparador)
+    (cond
+      [(and (string? e1) (string? e2)) (comparar-strings? e1 e2 comparador)]
+      [(and (number? e1) (number? e2)) (comparar-numeros? e1 e2 comparador)]
+      [else (eopl:error "valor esperado, dos strings o dos flotantes")])))
 
 
         
          
+(define make-struct
+  (lambda (arg type)
+    (letrec(
+         
+     (make (lambda (arg)
+        (if (null? arg) ""
+            (if (null? (cdr arg))
+                (string-append (~a (car arg)) (make (cdr arg)))
+                (string-append (~a (car arg)) "," (make (cdr arg)))
 
+            ))))
+     )
+    (cond
+      [(or (equal? (car arg) "()") (equal? (car arg) "[]")) (car arg)]
+      [(equal? type 'list) (string-append "("(make arg) ")")]
+      [(equal? type 'vector) (string-append "["(make arg) "]")]
+      [(equal? type 'append) (make arg)]
+      
+        
+
+
+    ))))
+
+ (define make-vec-zise
+   (lambda (arg)
+     (letrec(
+           (tamaño (if (null? arg) 0 (car arg)))
+          (relleno (if (null? arg) "" (~a (cadr arg))))
+          
+          (crear
+           (lambda(tamaño relleno)
+             (if (equal? tamaño 0) ""
+                 (if (equal? (- tamaño 1) 0)
+                 (string-append relleno (crear (- tamaño 1) relleno))
+                 (string-append relleno "," (crear (- tamaño 1) relleno))
+                 ))))
+          )
+          (string-append "[" (crear tamaño relleno) "]")
+       )))
+  
+                 
+(define append-list
+  (lambda (arg)
+    (let(
+         (list1 (if (equal? (car arg) "()") "" (make-struct (car arg) 'append)))
+         (list2 (if (equal? (cadr arg) "()") "" (make-struct (cadr arg) 'append)))
+         )
+      (if(or (equal? list1 "") (equal? list2 ""))
+       (string-append "(" list1  list2 ")") 
+       (string-append "(" list1 "," list2 ")")
+       ))))
+                 
+          
+
+
+
+
+    
 
 ;eval-expression: <expression> <enviroment> -> numero
 ; evalua la expresión en el ambiente de entrada
@@ -510,9 +577,11 @@
       (text-exp (text) text)
       (true-exp () "true")
       (false-exp () "false")
-      (empty-list-exp () "[]")
+      (empty-list-exp () "()")
+      (empty-vec-exp () "[]")
+      ;;primap-exp
       (primapp-un-exp (prim rand)
-                  (let ((arg (eval-expression rand env)))
+                  (let ((arg (eval-rands rand env)))
                    (apply-unary-primitive prim arg)))
       
       (primapp-bin-exp (exp1 prim exp2)
@@ -550,8 +619,11 @@
       ;;faltan algunos cambios----------------------------
       (list-exp (args)
                 (eval-rands args env))
+      (vec-exp (args) (list->vector (eval-rands args env)))
+              
+                     
 
-      (else "faltan casos eval-expression")
+      (else 'error)
       )    
     ))
 
