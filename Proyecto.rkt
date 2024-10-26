@@ -1,6 +1,6 @@
 #lang eopl
 (require racket/format)
-
+(require racket/list)
 
 ;******************************************************************************************
 ;Andres David Ortega Arteaga 2241885
@@ -81,7 +81,7 @@
   (flotante
    ("-" digit (arbno digit) "." digit (arbno digit)) number)
   (text
-    (letter (arbno (or letter digit "_" ":"))) string)
+    (letter (arbno (or letter digit "_" ":" whitespace))) string)
 
   ))
 
@@ -132,19 +132,12 @@
         "in" expression) 
     letrec-exp)
 
-   ;PARTES DE LAS LISTAS
     (expression ("(" (separated-list expression ",") ")") list-exp)
 
     (expression ("["  (separated-list expression ",") "]") vec-exp)
 
-   
-   
+    (expression ("{" (separated-list "\"" text "\"" ":" expression ",") "}") dic-exp)
 
-    ;(expression (unary-primitive "(" (arbno expression) ")") data-structure-exp)
-
-    
-
-    ;; Primitiva empty para representar una lista vacía
     (expression ("()") empty-list-exp)
 
     (expression ("[]") empty-vec-exp)
@@ -169,27 +162,35 @@
     (primitiva-binaria (">=") primitiva-mayor-igual)
     (primitiva-binaria ("<=") primitiva-menor-igual)
     (primitiva-binaria ("!=") primitiva-diferente)
-    (primitiva-binaria ("==") primitiva-comparador-igual)
-    (primitiva-binaria ("append-list") primitiva-append-list)
-  
-
-    
+    (primitiva-binaria ("==") primitiva-comparador-igual)  
     ;unary-primitive-exp
     (unary-primitive ("length") primitive-lenght);operacion unaria para calcula longitud de un string
     (unary-primitive ("add1") primitive-add1);operacion unaria hallar el sucesor de un numero
     (unary-primitive ("sub1") primitive-sub1);operacion unaria hallar el predecesor de un numero
     (unary-primitive ("neg") primitive-neg-boolean);operacion que niega el valor de un booleano
-    (unary-primitive("empty?") primitive-empty);;----------------------------------
-    (unary-primitive("list?") primitive-list);;falta
+    ;;listas
+    (unary-primitive("empty?") primitive-empty)
+    (unary-primitive("list?") primitive-list?);;falta
     (unary-primitive("head") primitive-head)
     (unary-primitive("tail")primitive-tail)
     (unary-primitive ("make-list") primitive-make-list)
+    (unary-primitive ("append-list") primitive-append-list)
+    ;;vectores
+    (unary-primitive("vector?") primitive-vector?)
     (unary-primitive ("make-vec") primitive-make-vec)
     (unary-primitive ("make-vec-zise") primitive-make-vec-zise)
     (unary-primitive ("ref-vector") primitive-ref-vector)
     (unary-primitive ("set-vector") primitive-set-vector)
     (unary-primitive ("append-vector") primitive-append-vector)
     (unary-primitive ("delete-val-vector") primitive-delete-vec)
+    ;;diccionario
+    (unary-primitive ("make-dict") primitive-make-dict)
+    (unary-primitive ("dict?") primitive-dict?)
+    (unary-primitive ("ref-dict") primitive-ref-dict)
+    (unary-primitive ("set-dict") primitive-set-dict)
+    (unary-primitive ("append-dict") primitive-append-dict)
+    (unary-primitive ("keys-dict") primitive-keys-dict)
+    (unary-primitive ("values-dict") primitive-values-dict)
     
     
 
@@ -228,9 +229,7 @@
       (primitiva-menor-igual () (valor-verdad? (comparar (car args) (cadr args) '<=)))
       (primitiva-diferente () (valor-verdad? (not (eqv? (car args) (cadr args)))))
       (primitiva-comparador-igual () (valor-verdad? (equal? (car args) (cadr args))))
-      (primitiva-append-list () (append-list args))
-    
-       (else "faltan casos bianrio")
+      (else "faltan casos bianrio")
  
       
       
@@ -247,54 +246,50 @@
       (primitive-sub1 () (- (car arg) 1))
       (primitive-neg-boolean () (if (eqv? (car arg) "true") "false"
                                     "true"))
+      ;listas
       (primitive-empty () (valor-verdad? (equal? (car arg) "[]")))
       (primitive-head () (car arg))
       (primitive-tail () (cdr arg))
-      ;;falta primitive list?
-      ;;falta vector?
-      (primitive-make-list () (make-struct arg 'list))
-      (primitive-make-vec () (make-struct arg 'vector))
+      (primitive-append-list () (append (car arg) (cadr arg)))
+      (primitive-make-list () arg)
+      (primitive-list? () (valor-verdad? (pair? arg)))
+      ;vectores
+      (primitive-vector? () (valor-verdad? (vector? (car arg))))
+      (primitive-make-vec () (list->vector arg))
       (primitive-make-vec-zise () (make-vec-zise arg))
       (primitive-ref-vector () (vector-ref (car arg) (cadr arg)))
-      (primitive-set-vector () (let (
-                                     ( v (vector-set! (car arg) (cadr arg) (caddr arg)))
-                                     )
-                                      (make-struct (vector->list (car arg)) 'vector)
-                                     ))
-      (primitive-append-vector () (let(
-
-                                       (l (append (vector->list (car arg)) (cdr arg)))
-
-
-                                       )(make-struct l 'vector)))
-      (primitive-delete-vec () (let(
-                                   (l (eliminar-pos (vector->list (car arg)) (cadr arg) 0))
-
-                                    )
-                                 (make-struct l 'vector)))
-                                    
-                                                    
+      (primitive-set-vector () (vector-set! (car arg) (cadr arg) (caddr arg)))
+      (primitive-append-vector () (append (vector->list (car arg)) (cadr arg)))
+      (primitive-delete-vec () (list->vector (eliminar-pos (vector->list (car arg)) (cadr arg) 0)))
+      ;diccionarios
+      (primitive-make-dict () (list (car arg) (list->vector (cadr arg))))
+      (primitive-dict? () (valor-verdad? (dict? (car arg))))
+      (primitive-ref-dict () (dict-values (car arg) (cadr arg)))
+      (primitive-set-dict () (set-dict (car arg) (cadr arg) (caddr arg)))
+      (primitive-append-dict () ( append-dict (car arg) (cadr arg) (caddr arg)))
+      (primitive-keys-dict () (caar arg))
+      (primitive-values-dict () (vector->list (cadr (car arg))))
       (else "faltan casos unario")
       )))
 
 
- (define eliminar-pos
-   (lambda (arg pos acc)
-     (if (null? arg) '()
-         (cond
-           [(not (equal? acc pos)) (cons (car arg) (eliminar-pos (cdr arg) pos (+ acc 1)))]
-           [(and (equal? acc pos) (not (null? (cdr arg)))) (cons (cadr arg) (eliminar-pos (cddr arg) pos (+ acc 2)))]
-           [else '()]
-           ))))
-         
-     
 
 
-;Funcione que retorna 1 si una operacion binaria es verdadera, o 0 si
+
+;(dict-values d "andres")
+#|(define-datatype dict dict?
+  (dic (keys (list-of string?))
+            (values (or (vector-of number?)
+                    (vector-of symbol?)
+                    (vector-of string?)
+                    (vector-of boolean?)))))|#
+                  
+  
+
+;Funcione que retorna "true" si una operacion binaria es verdadera, o "false" si
 ;la exprecion es falsa
-;valor_verdad?: primitiva-binaria x expression x expression => number
-;usage:(valor-verdad? prim exp1 exp2) => 1 si al aplicar la primitiva a
-;los 2 argumentos el valor es diferente a 0, 0 de caso contrario
+;valor_verdad?: boolean => string
+;usage:(valor-verdad? boolean) => "true" si el booleano es #t o "false" de lo contrario
 
 
 (define valor-verdad?
@@ -453,6 +448,11 @@
   (lambda (sym los)
     (list-index (lambda (sym1) (eqv? sym1 sym)) los)))
 
+
+(define list-find-position-string
+  (lambda (str los)
+    (list-index (lambda (str1) (equal? str1 str)) los)))
+
 (define list-index
   (lambda (pred ls)
     (cond
@@ -468,7 +468,7 @@
 ;Funcion que convierte a string numeros y simbolos
 ;convert-to-string: a => string
 ;usage: (convert-to-string a) => string a
-(define convert-to-string
+#|(define convert-to-string
   (lambda (a)
     (cond
       ((number? a) (number->string a))
@@ -476,7 +476,11 @@
       (else a)
     )
   )
-)
+)|#
+
+;funcion que compara 2 strings.
+;comparar-strings?: string x string x symbol => boolean
+;usage:(comparar-string string1 string2 comparador) => retorna un booleano, resultado de comparar los strings1 y string2 con un determinado comparador que ingresa como simbolo
 
 (define comparar-strings?
   (lambda (string1 string2 comparador)
@@ -486,7 +490,8 @@
         [(equal? comparador '>=) (string>=? string1 string2)]
         [(equal? comparador '<=) (string<=? string1 string2)]
         [else (eopl:error "no se pueden comparar los strings")])))
-        
+
+;funcion que compara dos numeros con un determinado comparador en forma de simbolo que resive como parametro.        
 (define comparar-numeros?
   (lambda (num1 num2 comparador)
     (cond
@@ -497,6 +502,7 @@
         [else (eopl:error "no se pueden comparar los numeros")])))        
     
 
+;funcion que utiliza las funciones comprar-numeros? y comparar-strings? para comparar numeros y strings. retorna un booleano.
 (define comparar
   (lambda (e1 e2 comparador)
     (cond
@@ -507,7 +513,7 @@
 
         
          
-(define make-struct
+#|(define make-struct
   (lambda (arg type)
     (letrec(
          
@@ -524,31 +530,48 @@
       [(equal? type 'list) (string-append "("(make arg) ")")]
       [(equal? type 'vector) (string-append "["(make arg) "]")]
       [(equal? type 'append) (make arg)]
-      
+     
         
 
 
-    ))))
+    ))))|#
 
- (define make-vec-zise
+#| (define make-vec-zise
    (lambda (arg)
      (letrec(
            (tamaño (if (null? arg) 0 (car arg)))
-          (relleno (if (null? arg) "" (~a (cadr arg))))
+          (relleno (if (null? arg) '() ((cadr arg))))
           
           (crear
            (lambda(tamaño relleno)
-             (if (equal? tamaño 0) ""
+             (if (equal? tamaño 0) '()
                  (if (equal? (- tamaño 1) 0)
-                 (string-append relleno (crear (- tamaño 1) relleno))
-                 (string-append relleno "," (crear (- tamaño 1) relleno))
+                 (cons relleno (crear (- tamaño 1) relleno))
+                 (cons relleno "," (crear (- tamaño 1) relleno))
                  ))))
           )
-          (string-append "[" (crear tamaño relleno) "]")
+          (crear tamaño relleno)
+       )))|#
+
+
+;funcion que crea un vector de un tamaño determinado y lo llena con un parametro determinado.
+(define make-vec-zise
+   (lambda (arg)
+     (letrec(
+           (tamaño (if (null? arg) 0 (car arg)))
+          (relleno (if (null? arg) '() (cadr arg)))
+          
+          (crear
+           (lambda(tamaño relleno)
+             (if (equal? tamaño 0) '()
+                 (cons relleno (crear (- tamaño 1) relleno))
+                 )))
+          )
+          (list->vector (crear tamaño relleno))
        )))
-  
-                 
-(define append-list
+
+;modificar                 
+#|(define append-list
   (lambda (arg)
     (let(
          (list1 (if (equal? (car arg) "()") "" (make-struct (car arg) 'append)))
@@ -557,14 +580,102 @@
       (if(or (equal? list1 "") (equal? list2 ""))
        (string-append "(" list1  list2 ")") 
        (string-append "(" list1 "," list2 ")")
-       ))))
-                 
-          
+       ))))|#
 
 
 
+;funcion que elimina un elemento de una lista en determinada posicion. 
+(define eliminar-pos
+   (lambda (arg pos acc)
+     (if (null? arg) '()
+         (cond
+           [(not (equal? acc pos)) (cons (car arg) (eliminar-pos (cdr arg) pos (+ acc 1)))]
+           [(and (equal? acc pos) (not (null? (cdr arg)))) (cons (cadr arg) (eliminar-pos (cddr arg) pos (+ acc 2)))]
+           [else '()]
+           ))))
 
+ #|(define make-dic
+  (lambda (arg)
+    (letrec(
+         (keys (car arg))
+         (values (cadr arg))
+         (make
+          (lambda (keys values)
+            (if (null? keys) ""
+                (if (null? (cdr keys))
+                (string-append (car keys) ":" (~a (car values)) (make (cdr keys) (cdr values)))
+                (string-append (car keys) ":" (~a (car values)) "," (make (cdr keys) (cdr values)))
+                ))))
+                )
+      (string-append "{" (make keys values) "}")
+      )))|#
+
+;funcion que comprueba si la lista que se le pasa como parametro es la representacion interna de un diccionario.
+ (define dict?
+  (lambda (arg)
+    (let(
+        (keys (car arg))
+        (values (cadr arg))
+      )
+    (cond
+      [(not (pair? keys)) #f]
+      [(not (vector? values)) #f]
+      [(not ((list-of string?) keys)) #f]
+      [(not (comprovar-verdad values)) #f]
+      [else #t]))))
+      
+(define comprovar-verdad
+  (lambda (vec)
+    (letrec(
+         (v (vector->list vec))
+         (t (map (lambda (x) (or (number? x) (boolean? x) (string? x) (symbol? x))) v ))
+         (valor-v (lambda (l) (if (null? l) #t (and (car l) (valor-v  (cdr l))))))
+         )
+      (valor-v t)
+      )))
+
+;funcion que resive una representacion interna de un diccionario y una clave. la funcion retorna el valor del diccionario asociado a dicha clave.
+(define dict-values
+  (lambda (dict key)
+    (let(
+    (pos (list-find-position-string key (car dict)))
     
+    )
+    (if (not (boolean? pos)) (vector-ref (cadr dict)  pos) "no encontrado"))))
+
+;funcion que modifica un valor asociado a una clave en un diccionario. retorna el diccionario modificado
+(define set-dict
+  (lambda (dict key value)
+    (let*(
+         (pos (list-find-position-string key (car dict)))
+         (v (vector-set! (cadr dict) pos value))
+         )
+      dict
+      )))
+
+;funcion que agrega nuevos elementos clave valor a un diccionario. retorna un diccionario con los nuevos elementos agregados
+
+(define append-dict
+  (lambda (dict keys values)
+    (if (and (dict? dict) (equal? (length keys) (length values)))
+    (let* (
+          (new-keys (append (car dict) keys))
+          (new-values (append (vector->list (cadr dict)) values))
+          (new-values-v (list->vector new-values))
+          (d (list new-keys new-values-v))
+          )
+      (if (dict? d ) d "la lista de claves o valores es de tipo incorrecto")
+      )
+    "los parametros no son los adecuados"
+    )))
+
+
+#|
+declarar(
+@d={"andres":1,"david":2};){
+declarar( @s=set-dict( @d "andres" 3);) {@d}}
+
+|#
 
 ;eval-expression: <expression> <enviroment> -> numero
 ; evalua la expresión en el ambiente de entrada
@@ -575,10 +686,10 @@
       (lit-float-exp (datum) datum)
       (var-exp (id) (apply-env env id))
       (text-exp (text) text)
-      (true-exp () "true")
-      (false-exp () "false")
-      (empty-list-exp () "()")
-      (empty-vec-exp () "[]")
+      (true-exp () #t)
+      (false-exp () #f)
+      (empty-list-exp () '())
+      (empty-vec-exp () (vector))
       ;;primap-exp
       (primapp-un-exp (prim rand)
                   (let ((arg (eval-rands rand env)))
@@ -620,6 +731,10 @@
       (list-exp (args)
                 (eval-rands args env))
       (vec-exp (args) (list->vector (eval-rands args env)))
+
+      ;(dic-exp (keys  values) (list keys (eval-rands values env)))
+      ;(dic-exp (keys values) (list keys (vector (eval-rands values env))))
+      (dic-exp (keys values) (list keys (list->vector (eval-rands values env))))
               
                      
 
