@@ -117,7 +117,7 @@
      localVar-exp)
 
     (expression
-     ("proc""(" (separated-list identifier ",") ")"
+     ("proc" identifier "(" (separated-list identifier ",") ")"
                    expression )
      proc-exp)
     
@@ -147,8 +147,8 @@
     (expression ( "graph" "(" expression "," expression ")" ";") graph-exp)
 
      ; características adicionales locals
-    (expression ("BLOCK" "{"expression (arbno  expression)"}")
-                block-exp)
+    (expression ("begin" expression (arbno  expression) "end")
+                begin-exp)
     (expression ("set" identifier "=" expression)
                 set-exp)
 
@@ -298,7 +298,7 @@
 
 (define valor-verdad?
   (lambda (bool)
-    (if bool "true" "false")))
+   bool))
 
 
 ;Tipos de datos para la sintaxis abstracta de la gramática
@@ -370,11 +370,8 @@
       (closure (ids body env)
                (eval-expression body (extend-env ids args env))))))
 
-;Funcion que define los valores de verdad, 0 = false y diferente de 0 = true
-;true-value?: numero -> boolean
-(define true-value?
-  (lambda (x)
-    (not (zero? x))))
+
+
 
 
 ;-------------------------------------------------------------------------------------------
@@ -423,6 +420,11 @@
               (vector-set! vec pos (closure ids body env)))
             (iota len) idss bodies)
           env)))))
+
+#|(define extend-env-recursively2
+  (lambda (proc-name ids body old-env)
+    (env (extend-env (list proc-name) (list (closure ids body old-env)) old-env))
+    (extend-env (list proc-name) (list (closure ids body old-env)) old-env)))|#
 
 ;iota: number -> list
 ;función que retorna una lista de los números desde 0 hasta end
@@ -775,9 +777,9 @@ declarar( @s=set-dict( @d "andres" 3);) {@d}}
                   (let ((arg1 (eval-expression exp1 env))
                         (arg2 (eval-expression exp2 env)))
                     (apply-primitive-bin prim (list arg1 arg2))))
-      
+      ; hay que corregir valor-verdad?
       (if-exp(test-exp true-exp false-exp)
-             (if(true-value? (eval-expression test-exp env))
+              (if(valor-verdad? (eval-expression test-exp env))
                 (eval-expression true-exp env)
                 (eval-expression false-exp env)))
 
@@ -786,8 +788,11 @@ declarar( @s=set-dict( @d "andres" 3);) {@d}}
                    (eval-expression body
                                     (extend-env ids args env))))
 
-      (proc-exp (ids body)
-                (closure ids body env))
+      (proc-exp (id ids body)
+                (let (
+                (new-env (extended-env-record  (list id) (vector (closure ids body env)) env))
+                )(closure ids body new-env)
+                  ))
 
       (app-exp (rator rands)
                  (let ((proc (eval-expression rator env))
@@ -817,7 +822,7 @@ declarar( @s=set-dict( @d "andres" 3);) {@d}}
                   (apply-env-ref env id)
                   (eval-expression rhs-exp env))
                  1))
-      (block-exp (exp exps) 
+      (begin-exp (exp exps) 
                  (let loop ((acc (eval-expression exp env))
                              (exps exps))
                     (if (null? exps) 
@@ -934,16 +939,18 @@ declarar(@decorate = procedure(@mensaje){
 
 #|
 prueba begin:
-let(
+
 @x=100;
 ){
 let(
-@p=proc(@x) BLOCK {
+@p=proc(@x) begin
 set @x=add1(@x)
-@x };)
+@x end;)
 {/app(@p @x) + app(@p @x)/}}
 
 
-
+let(
+@p= proc @fac(@x) Si /@x == 0/ {1} sino {/@x * app(@fact /@x ~ 1/)/};
+) {app(@p 5)}
 
 |#

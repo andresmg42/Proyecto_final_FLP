@@ -147,8 +147,8 @@
     (expression ( "graph" "(" expression "," expression ")" ";") graph-exp)
 
      ; características adicionales locals
-    (expression ("BLOCK" "{"expression (arbno  expression)"}")
-                block-exp)
+    (expression ("begin" expression (arbno  expression) "end")
+                begin-exp)
     (expression ("set" identifier "=" expression)
                 set-exp)
 
@@ -817,7 +817,7 @@ declarar( @s=set-dict( @d "andres" 3);) {@d}}
                   (apply-env-ref env id)
                   (eval-expression rhs-exp env))
                  1))
-      (block-exp (exp exps) 
+      (begin-exp (exp exps) 
                  (let loop ((acc (eval-expression exp env))
                              (exps exps))
                     (if (null? exps) 
@@ -934,13 +934,13 @@ declarar(@decorate = procedure(@mensaje){
 
 #|
 prueba begin:
-let(
+
 @x=100;
 ){
 let(
-@p=proc(@x) BLOCK {
+@p=proc(@x) begin
 set @x=add1(@x)
-@x };)
+@x end;)
 {/app(@p @x) + app(@p @x)/}}
 
 
