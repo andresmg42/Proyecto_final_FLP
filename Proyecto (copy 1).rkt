@@ -117,7 +117,7 @@
      localVar-exp)
 
     (expression
-     ("proc" identifier "(" (separated-list identifier ",") ")"
+     ("proc""(" (separated-list identifier ",") ")"
                    expression )
      proc-exp)
     
@@ -126,7 +126,7 @@
 
     (expression
      ("letrec"
-      (arbno identifier "(" (separated-list identifier ",") ")" "=" expression)
+      (arbno identifier  "=" expression)
         "in" expression) 
     letrec-exp)
 
@@ -421,10 +421,27 @@
             (iota len) idss bodies)
           env)))))
 
-#|(define extend-env-recursively2
-  (lambda (proc-name ids body old-env)
-    (env (extend-env (list proc-name) (list (closure ids body old-env)) old-env))
-    (extend-env (list proc-name) (list (closure ids body old-env)) old-env)))|#
+(define extend-env-recursively2
+  (lambda (names bodies old-env)
+    (let* (
+      (len (length names))
+      (vec (make-vector len))
+      (env (extended-env-record names vec old-env)))
+      
+      (for-each
+            (lambda (pos body)
+              (if (proc? body)
+                  (let(
+                       (ids-body (cases proc body (procedure (ids body) (list ids body)))) 
+
+                       )
+              (vector-set! vec pos (closure (car ids-body) (cadr ids-body) env))
+                    )
+              (vector-set! vec pos  body)
+              ))
+                  
+            (iota len) bodies)
+           env)))
 
 ;iota: number -> list
 ;función que retorna una lista de los números desde 0 hasta end
@@ -788,11 +805,9 @@ declarar( @s=set-dict( @d "andres" 3);) {@d}}
                    (eval-expression body
                                     (extend-env ids args env))))
 
-      (proc-exp (id ids body)
-                (let (
-                (new-env (extended-env-record  (list id) (vector (closure ids body env)) env))
-                )(closure ids body new-env)
-                  ))
+      (proc-exp (ids body)
+                ;(closure ids body env))
+                (procedure ids body))
 
       (app-exp (rator rands)
                  (let ((proc (eval-expression rator env))
@@ -804,10 +819,40 @@ declarar( @s=set-dict( @d "andres" 3);) {@d}}
                          )
                  )
                )
-      (letrec-exp (proc-names ids proc-bodies letrec-body)
-                  (eval-expression letrec-body
+      ;-----------------------------------------------------------------
+     #|(letrec-exp (proc-names  procs letrec-body)
+                 (let(
+                      (ids (car (listas-proc procs '() '())))
+                      (proc-bodies (cadr (listas-proc procs '() '())))
+                      )
+                   (eval-expression letrec-body
                                    (extend-env-recursively proc-names ids proc-bodies env))
-                  )
+                  ))|#
+      
+      ;(letrec-exp (names  exps letrec-body)
+                 
+                       ;(names-procs (names-procs names exps '() '() '() '())))
+                       
+                    
+                      
+                  
+                 #|(let(
+                      (ids (car (listas-proc procs '() '())))
+                      (proc-bodies (cadr (listas-proc procs '() '())))
+                      )
+                   (eval-expression letrec-body
+                                   (extend-env-recursively proc-names ids proc-bodies env))
+                  ))|#
+
+;-----------------------------------segunda idea------------------------------------
+      (letrec-exp (names  exps letrec-body)
+                   (let (
+                         (args (eval-rands exps env))
+                   )(eval-expression letrec-body (extend-env-recursively2 names args env)
+                     )))
+      
+;-------------------------------------------------------------------------
+      
       (list-exp (args)
                 (eval-rands args env))
       (vec-exp (args) (list->vector (eval-rands args env)))
@@ -835,6 +880,31 @@ declarar( @s=set-dict( @d "andres" 3);) {@d}}
       )    
     ))
 
+(define listas-proc
+  (lambda (exps list-ids list-bodies)
+    (if (null? exps) (list list-ids list-bodies)
+        (cases expression (car exps)
+          (proc-exp (ids body)
+                    (listas-proc (cdr exps) (cons ids list-ids) (cons body list-bodies)))
+          (else 'error)
+             
+             ))))
+
+(define-datatype proc proc?
+  (procedure (ids (list-of symbol?))
+              (exp expression?)))
+
+
+#|(define names-procs
+  (lambda (names exps names-procs bodies-procs names-noprocs bodies-noprocs)
+    (if (null? exps) (list names-procs bodies-procs names-noprocs bodies-noprocs)
+        (if (proc-exp? (car exps))
+            (names-procs (cdr names) (cdr exps) (cons (car names) names-procs) (cons (car exps) bodies-procs) names-noprocs bodies-noprocs)
+            (names-procs (cdr names) (cdr exps) names-procs bodies-procs (cons (car names) names-noprocs) (cons (car exps) bodies-noprocs))
+            )
+        )
+    ))|#
+            
 ;-----------------------------------------------------------------------------------------------
 #|
 PUNTOS DEL TALLER
@@ -952,5 +1022,10 @@ set @x=add1(@x)
 let(
 @p= proc @fac(@x) Si /@x == 0/ {1} sino {/@x * app(@fact /@x ~ 1/)/};
 ) {app(@p 5)}
+
+
+letrec
+@p= proc(@x) Si /@x == 0/ {1} sino {/@x * app(@p /@x ~ 1/)/}
+in app(@p 5)
 
 |#
