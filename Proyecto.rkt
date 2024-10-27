@@ -81,7 +81,7 @@
   (flotante
    ("-" digit (arbno digit) "." digit (arbno digit)) number)
   (text
-    (letter (arbno (or letter digit "_" ":" whitespace))) string)
+    (letter (arbno (or letter digit "_" ":"))) string)
 
   ))
 
@@ -112,19 +112,17 @@
      if-exp)
 
     (expression
-     ("declarar" "(" (arbno identifier "=" expression ";") ")"
+     ("let" "(" (arbno identifier "=" expression ";") ")"
                  "{"expression "}")
      localVar-exp)
 
     (expression
-     ("proc" "(" (separated-list type-exp identifier ",") ")"
+     ("proc""(" (separated-list identifier ",") ")"
                    expression )
-     procedure-exp)
+     proc-exp)
     
-    (expression
-     ("eval" expression "("(separated-list expression ",")")"
-              "finalEval")   
-    app-exp)
+    (expression ( "app""(" expression (arbno expression) ")")
+                app-exp)
 
     (expression
      ("letrec"
@@ -148,6 +146,12 @@
 
     (expression ( "graph" "(" expression "," expression ")" ";") graph-exp)
 
+     ; características adicionales locals
+    (expression ("begin" expression (arbno  expression) "end")
+                begin-exp)
+    (expression ("set" identifier "=" expression)
+                set-exp)
+
     
     
     
@@ -170,7 +174,7 @@
     (unary-primitive ("neg") primitive-neg-boolean);operacion que niega el valor de un booleano
     ;;listas
     (unary-primitive("empty?") primitive-empty)
-    (unary-primitive("list?") primitive-list?);;falta
+    (unary-primitive("list?") primitive-list?)
     (unary-primitive("head") primitive-head)
     (unary-primitive("tail")primitive-tail)
     (unary-primitive ("make-list") primitive-make-list)
@@ -386,72 +390,116 @@
 ;Ambientes
 ;definición del tipo de dato ambiente
 (define-datatype environment environment?
-  (empty-env-record);ambiente vacio
-  (extended-env-record (syms (list-of symbol?));ambiente extendido con o sin variables
-                       (vals (list-of scheme-value?))
-                       (env environment?))
-  (recursively-extended-env-record (proc-names (list-of symbol?));ambiente extendido para la recurcion
-                                   (idss (list-of (list-of symbol?)));que guarda el mismo ambiente del que extiende
-                                   (bodies (list-of expression?))
-                                   (env environment?)))
+  (empty-env-record)
+  (extended-env-record
+   (syms (list-of symbol?))
+   (vec vector?)
+   (env environment?)))
 
-;definicion de scheme-value
-;cualquier cosa es un scheme-value
 (define scheme-value? (lambda (v) #t))
 
-;empty-env: -> enviroment
+;empty-env:      -> enviroment
 ;función que crea un ambiente vacío
 (define empty-env  
   (lambda ()
-    (empty-env-record)));llamado al constructor de ambiente vacío 
+    (empty-env-record)))       ;llamado al constructor de ambiente vacío 
 
+
+;extend-env: <list-of symbols> <list-of numbers> enviroment -> enviroment
+;función que crea un ambiente extendido
+(define extend-env
+  (lambda (syms vals env)
+    (extended-env-record syms (list->vector vals) env)))
 
 ;extend-env-recursively: <list-of symbols> <list-of <list-of symbols>> <list-of expressions> environment -> environment
 ;función que crea un ambiente extendido para procedimientos recursivos
-(define extend-env
-  (lambda (syms vals env)
-    (extended-env-record syms vals env))) 
-
-;extend-env: <list-of symbol> <list-of symbol> <list-of expression>
 (define extend-env-recursively
   (lambda (proc-names idss bodies old-env)
-    (recursively-extended-env-record
-     proc-names idss bodies old-env)))
+    (let ((len (length proc-names)))
+      (let ((vec (make-vector len)))
+        (let ((env (extended-env-record proc-names vec old-env)))
+          (for-each
+            (lambda (pos ids body)
+              (vector-set! vec pos (closure ids body env)))
+            (iota len) idss bodies)
+          env)))))
+
+;iota: number -> list
+;función que retorna una lista de los números desde 0 hasta end
+(define iota
+  (lambda (end)
+    (let loop ((next 0))
+      (if (>= next end) '()
+        (cons next (loop (+ 1 next)))))))
+
+;(define iota
+;  (lambda (end)
+;    (iota-aux 0 end)))
+;
+;(define iota-aux
+;  (lambda (ini fin)
+;    (if (>= ini fin)
+;        ()
+;        (cons ini (iota-aux (+ 1 ini) fin)))))
 
 ;función que busca un símbolo en un ambiente
 (define apply-env
   (lambda (env sym)
+    (deref (apply-env-ref env sym))))
+     ;(apply-env-ref env sym)))
+    ;env))
+(define apply-env-ref
+  (lambda (env sym)
     (cases environment env
       (empty-env-record ()
-                        (eopl:error 'empty-env "No binding for ~s" sym))
-      (extended-env-record (syms vals old-env)
-                           (let ((pos (list-find-position sym syms)))
+                        (eopl:error 'apply-env-ref "No binding for ~s" sym))
+      (extended-env-record (syms vals env)
+                           (let ((pos (rib-find-position sym syms)))
                              (if (number? pos)
-                                 (list-ref vals pos)
-                                 (apply-env old-env sym))))
-      (recursively-extended-env-record (proc-names idss bodies old-env)
-                                       (let ((pos (list-find-position sym proc-names)))
-                                         (if (number? pos)
-                                             (closure (list-ref idss pos)
-                                                      (list-ref bodies pos)
-                                                      env)
-                                             (apply-env old-env sym)))))))
+                                 (a-ref pos vals)
+                                 (apply-env-ref env sym)))))))
+
+;*******************************************************************************************
+;Referencias
+
+(define-datatype reference reference?
+  (a-ref (position integer?)
+         (vec vector?)))
+
+(define deref
+  (lambda (ref)
+    (primitive-deref ref)))
+
+(define primitive-deref
+  (lambda (ref)
+    (cases reference ref
+      (a-ref (pos vec)
+             (vector-ref vec pos)))))
+
+(define setref!
+  (lambda (ref val)
+    (primitive-setref! ref val)))
+
+(define primitive-setref!
+  (lambda (ref val)
+    (cases reference ref
+      (a-ref (pos vec)
+             (vector-set! vec pos val)))))
 
 
-;-------------------------------------------------------------------------------------------
-;Funciones Auxiliares
+;****************************************************************************************
+;Funciones Auxiliares-referencias
 
 ; funciones auxiliares para encontrar la posición de un símbolo
 ; en la lista de símbolos de un ambiente
 
+(define rib-find-position 
+  (lambda (sym los)
+    (list-find-position sym los)))
+
 (define list-find-position
   (lambda (sym los)
     (list-index (lambda (sym1) (eqv? sym1 sym)) los)))
-
-
-(define list-find-position-string
-  (lambda (str los)
-    (list-index (lambda (str1) (equal? str1 str)) los)))
 
 (define list-index
   (lambda (pred ls)
@@ -462,6 +510,34 @@
               (if (number? list-index-r)
                 (+ list-index-r 1)
                 #f))))))
+
+;******************************************************************************************
+
+
+;-------------------------------------------------------------------------------------------
+;Funciones Auxiliares
+
+; funciones auxiliares para encontrar la posición de un símbolo
+; en la lista de símbolos de un ambiente
+
+#|(define list-find-position
+  (lambda (sym los)
+    (list-index (lambda (sym1) (eqv? sym1 sym)) los)))|#
+
+
+(define list-find-position-string
+  (lambda (str los)
+    (list-index (lambda (str1) (equal? str1 str)) los)))
+
+#|(define list-index
+  (lambda (pred ls)
+    (cond
+      ((null? ls) #f)
+      ((pred (car ls)) 0)
+      (else (let ((list-index-r (list-index pred (cdr ls))))
+              (if (number? list-index-r)
+                (+ list-index-r 1)
+                #f))))))|#
 
 
 
@@ -679,6 +755,7 @@ declarar( @s=set-dict( @d "andres" 3);) {@d}}
 
 ;eval-expression: <expression> <enviroment> -> numero
 ; evalua la expresión en el ambiente de entrada
+
 (define eval-expression
   (lambda (exp env)
     (cases expression exp
@@ -690,7 +767,6 @@ declarar( @s=set-dict( @d "andres" 3);) {@d}}
       (false-exp () #f)
       (empty-list-exp () '())
       (empty-vec-exp () (vector))
-      ;;primap-exp
       (primapp-un-exp (prim rand)
                   (let ((arg (eval-rands rand env)))
                    (apply-unary-primitive prim arg)))
@@ -710,8 +786,8 @@ declarar( @s=set-dict( @d "andres" 3);) {@d}}
                    (eval-expression body
                                     (extend-env ids args env))))
 
-      (procedure-exp (id-types ids body)
-                     (closure ids body env))
+      (proc-exp (ids body)
+                (closure ids body env))
 
       (app-exp (rator rands)
                  (let ((proc (eval-expression rator env))
@@ -727,17 +803,29 @@ declarar( @s=set-dict( @d "andres" 3);) {@d}}
                   (eval-expression letrec-body
                                    (extend-env-recursively proc-names ids proc-bodies env))
                   )
-      ;;faltan algunos cambios----------------------------
       (list-exp (args)
                 (eval-rands args env))
       (vec-exp (args) (list->vector (eval-rands args env)))
 
-      ;(dic-exp (keys  values) (list keys (eval-rands values env)))
-      ;(dic-exp (keys values) (list keys (vector (eval-rands values env))))
       (dic-exp (keys values) (list keys (list->vector (eval-rands values env))))
-              
-                     
 
+      ;locals
+
+       (set-exp (id rhs-exp)
+               (begin
+                 (setref!
+                  (apply-env-ref env id)
+                  (eval-expression rhs-exp env))
+                 1))
+      (begin-exp (exp exps) 
+                 (let loop ((acc (eval-expression exp env))
+                             (exps exps))
+                    (if (null? exps) 
+                        acc
+                        (loop (eval-expression (car exps) 
+                                               env)
+                              (cdr exps)))))
+              
       (else 'error)
       )    
     ))
@@ -840,4 +928,22 @@ declarar(@evaluado = eval @saludar(@integrantes) finalEval;)
 declarar(@decorate = procedure(@mensaje){
 (eval @evaluado() finalEval concat @mensaje)};)
 {eval @decorate("Estudiantes_de_FLP") finalEval}}}
+|#
+
+
+
+#|
+prueba begin:
+
+@x=100;
+){
+let(
+@p=proc(@x) begin
+set @x=add1(@x)
+@x end;)
+{/app(@p @x) + app(@p @x)/}}
+
+
+
+
 |#
