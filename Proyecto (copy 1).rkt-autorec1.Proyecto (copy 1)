@@ -87,12 +87,8 @@
 
 ;Especificación Sintáctica (gramática)
 (define grammar-simple-interpreter
-  '(
-    ;(globals ("GLOBALS" "{" (arbno identifier "=" expression) "}") globals-exp)
-    ;(fusion-lang (globals "," program) fusion-lang-exp)
-    ;(program ("PROGRAM" "{" expression "}") a-program)
-    (fusion-lang ("GLOBALS" "{" (arbno identifier "=" expression) "}" "PROGRAM" "{" expression "}") fusion-exp)
-    (expression ("main""("")" "{" "return" expression "}") main-exp)
+  '((program (expression) a-program)
+    
     (expression (entero) lit-ent-exp)
     (expression (flotante) lit-float-exp)
     (expression (identifier) var-exp)
@@ -120,17 +116,16 @@
      localVar-exp)
 
     (expression
-     ("function" "(" (arbno identifier) ")" "return"
+     ("proc""(" (separated-list identifier ",") ")"
                    expression )
-     function-exp)
-
-    ;(expression ("proc" identifier "("(arbno identifier)")" "return" expression) proc-exp)
+     proc-exp)
     
     (expression ( "app""(" expression (arbno expression) ")")
                 app-exp)
 
     (expression
-     ("letrec" (arbno identifier  "=" expression)  "in" expression)  letrec-exp)
+     ("letrec" 
+      (arbno identifier  "=" expression) "in" expression) letrec-exp)
 
     (expression ("(" (separated-list expression ",") ")") list-exp)
 
@@ -155,7 +150,7 @@
                 set-exp)
     (expression ("LOCALS" "{" (arbno identifier "=" expression) "}" "{"expression (arbno expression) "}") locals-exp)
 
-    
+    (expression ("GLOBALS" "{" (arbno identifier "=" expression) "}") globals-exp)
 
     
     
@@ -339,40 +334,11 @@
 
 ;eval-program: <programa> -> numero
 ;función que evalúa un programa teniendo en cuenta un ambiente dado (se inicializa dentro del programa)
-#|(define eval-program
-  (lambda (flang)
-    (cases fusion-lang flang
-      (fusion-lang-exp (p g)
-                       (let(
-                            (env (cases globals g (globals-exp (ids exps)
-                                   (let(
-                                        (args (eval-rands exps (init-env)))
-                                        )
-                                     (extend-env-recursively2 ids args (init-env))))))
-                            (body (cases program p(a-program (body) body)))
-                            )
-                         (eval-expression body env)
-                         )
-                       ))))|#
-
 (define eval-program
-  (lambda (flang)
-    (cases fusion-lang flang
-      (fusion-exp (ids exps program-body)
-                       (let(
-                            (env 
-                                   (let(
-                                        (args (eval-rands exps (init-env)))
-                                        )
-                                     (extend-env-recursively2 ids args (init-env))))
-                            
-                            )
-                         (eval-expression program-body env)
-                         )
-                       ))))
-
-
-                                                                 
+  (lambda (pgm)
+    (cases program pgm
+      (a-program (body)
+                 (eval-expression body (init-env))))))
 
 ;ambiente inicial
 (define init-env
@@ -839,9 +805,9 @@ declarar( @s=set-dict( @d "andres" 3);) {@d}}
                    (eval-expression body
                                     (extend-env ids args env))))
 
-      (function-exp (ids body) (procedure ids body))
-      
-      ;(proc-exp (name ids body) (procedure ids body))
+      (proc-exp (ids body)
+                
+                (procedure ids body))
 
       (app-exp (rator rands)
                  (let ((proc (eval-expression rator env))
@@ -901,7 +867,7 @@ declarar( @s=set-dict( @d "andres" 3);) {@d}}
                     ))
       ;globals
 
-       
+      (globals-exp (ids exps) (extend-env-recursively2 names args env))  
               
       (else 'error)
       )    
@@ -911,7 +877,7 @@ declarar( @s=set-dict( @d "andres" 3);) {@d}}
   (lambda (exps list-ids list-bodies)
     (if (null? exps) (list list-ids list-bodies)
         (cases expression (car exps)
-          (function-exp (ids body)
+          (proc-exp (ids body)
                     (listas-proc (cdr exps) (cons ids list-ids) (cons body list-bodies)))
           (else 'error)
              
@@ -1055,32 +1021,4 @@ letrec
 @p= proc(@x) Si /@x == 0/ {1} sino {/@x * app(@p /@x ~ 1/)/}
 in app(@p 5)
 
-
-GLOBALS{
-@x=5}
-PROGRAM{
-letrec
-@p= function(@x) return Si /@x == 0/ {1} sino {/@x * app(@p /@x ~ 1/)/}
-in app(@p @x)
-}
-
-GLOBALS{
-@x=5
-@p= function(@x)  return Si /@x == 0/ {1} sino {/@x * app(@p /@x ~ 1/)/}
-}
-PROGRAM{
-BLOCK{
-set @x=10
-app(@p @x)
-}}
-
-GLOBALS{
-@x=5
-@p= function(@x)  return Si /@x == 0/ {1} sino {/@x * app(@p /@x ~ 1/)/}
-}
-PROGRAM{
-LOCALS{
-@x=10
-
-}{app(@p @x)}}
 |#
