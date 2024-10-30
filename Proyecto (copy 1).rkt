@@ -112,7 +112,7 @@
      if-exp)
 
     (expression
-     ("locals"  "(" (arbno identifier "=" expression) ")" "->" expression)
+     ("let"  (arbno identifier "=" expression) "in" expression)
      localVar-exp)
 
     (expression
@@ -123,7 +123,9 @@
     (expression ( "app""(" expression (arbno expression) ")")
                 app-exp)
 
-
+    (expression
+     ("letrec" 
+      (arbno identifier  "=" expression) "in" expression) letrec-exp)
 
     (expression ("(" (separated-list expression ",") ")") list-exp)
 
@@ -146,9 +148,9 @@
                 begin-exp)
     (expression ("set" identifier "=" expression)
                 set-exp)
-    (expression
-     ("LOCALS" "{"
-      (arbno identifier  "=" expression) "}" "{" expression (arbno  expression) "}") letrec-exp)
+    (expression ("LOCALS" "{" (arbno identifier "=" expression) "}" "{"expression (arbno expression) "}") locals-exp)
+
+    (expression ("GLOBALS" "{" (arbno identifier "=" expression) "}") globals-exp)
 
     
     
@@ -792,7 +794,7 @@ declarar( @s=set-dict( @d "andres" 3);) {@d}}
                   (let ((arg1 (eval-expression exp1 env))
                         (arg2 (eval-expression exp2 env)))
                     (apply-primitive-bin prim (list arg1 arg2))))
-      ; hay que corregir valor-verdad?
+
       (if-exp(test-exp true-exp false-exp)
               (if(valor-verdad? (eval-expression test-exp env))
                 (eval-expression true-exp env)
@@ -804,7 +806,7 @@ declarar( @s=set-dict( @d "andres" 3);) {@d}}
                                     (extend-env ids args env))))
 
       (proc-exp (ids body)
-                ;(closure ids body env))
+                
                 (procedure ids body))
 
       (app-exp (rator rands)
@@ -817,32 +819,7 @@ declarar( @s=set-dict( @d "andres" 3);) {@d}}
                          )
                  )
                )
-      ;-----------------------------------------------------------------
-     #|(letrec-exp (proc-names  procs letrec-body)
-                 (let(
-                      (ids (car (listas-proc procs '() '())))
-                      (proc-bodies (cadr (listas-proc procs '() '())))
-                      )
-                   (eval-expression letrec-body
-                                   (extend-env-recursively proc-names ids proc-bodies env))
-                  ))|#
       
-      ;(letrec-exp (names  exps letrec-body)
-                 
-                       ;(names-procs (names-procs names exps '() '() '() '())))
-                       
-                    
-                      
-                  
-                 #|(let(
-                      (ids (car (listas-proc procs '() '())))
-                      (proc-bodies (cadr (listas-proc procs '() '())))
-                      )
-                   (eval-expression letrec-body
-                                   (extend-env-recursively proc-names ids proc-bodies env))
-                  ))|#
-
-;-----------------------------------segunda idea------------------------------------
       (letrec-exp (names  exps letrec-body)
                    (let (
                          (args (eval-rands exps env))
@@ -857,14 +834,15 @@ declarar( @s=set-dict( @d "andres" 3);) {@d}}
 
       (dic-exp (keys values) (list keys (list->vector (eval-rands values env))))
 
-      ;locals
-
+      ;set
        (set-exp (id rhs-exp)
                (begin
                  (setref!
                   (apply-env-ref env id)
                   (eval-expression rhs-exp env))
                  1))
+
+      ;block
       (begin-exp (exp exps) 
                  (let loop ((acc (eval-expression exp env))
                              (exps exps))
@@ -873,6 +851,23 @@ declarar( @s=set-dict( @d "andres" 3);) {@d}}
                         (loop (eval-expression (car exps) 
                                                env)
                               (cdr exps)))))
+      ;locals
+
+      (locals-exp (names  exps l-body-exp l-body-exps)
+                  (let* (
+                         (args (eval-rands exps env))
+                         (env (extend-env-recursively2 names args env))
+                   )(let loop ((acc (eval-expression l-body-exp env))
+                             (exps l-body-exps))
+                    (if (null? exps) 
+                        acc
+                        (loop (eval-expression (car exps) 
+                                               env)
+                              (cdr exps))))
+                    ))
+      ;globals
+
+      (globals-exp (ids exps) (extend-env-recursively2 names args env))  
               
       (else 'error)
       )    
