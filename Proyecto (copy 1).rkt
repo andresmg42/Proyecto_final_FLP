@@ -112,8 +112,7 @@
      if-exp)
 
     (expression
-     ("let" "(" (arbno identifier "=" expression ";") ")"
-                 "{"expression "}")
+     ("locals"  "(" (arbno identifier "=" expression) ")" "->" expression)
      localVar-exp)
 
     (expression
@@ -124,11 +123,7 @@
     (expression ( "app""(" expression (arbno expression) ")")
                 app-exp)
 
-    (expression
-     ("letrec"
-      (arbno identifier  "=" expression)
-        "in" expression) 
-    letrec-exp)
+
 
     (expression ("(" (separated-list expression ",") ")") list-exp)
 
@@ -147,10 +142,13 @@
     (expression ( "graph" "(" expression "," expression ")" ";") graph-exp)
 
      ; características adicionales locals
-    (expression ("begin" expression (arbno  expression) "end")
+    (expression ("BLOCK" "{" expression (arbno  expression) "}")
                 begin-exp)
     (expression ("set" identifier "=" expression)
                 set-exp)
+    (expression
+     ("LOCALS" "{"
+      (arbno identifier  "=" expression) "}" "{" expression (arbno  expression) "}") letrec-exp)
 
     
     
