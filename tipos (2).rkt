@@ -327,31 +327,15 @@
     (cases fusion-lang fusion
       (fusion-exp (texps idss g-exps p-exp) (type-of-fusion-lang texps idss g-exps p-exp (empty-tenv))))))
 
-(define proc-list
-  (lambda (exps results names list-texps list-ids list-bodies list-proc-names list-results list-noproc-names list-noproc-results)
-    (if (null? exps) (list list-texps list-ids list-bodies list-proc-names list-results list-noproc-names list-noproc-results)
-        (if (proc? (car exps))
-            
-            (cases proc (car exps)
-              (procedure (texps ids bodie)
-                         (proc-list (cdr exps) (cdr results) (cdr names) (cons texps list-texps)
-                                    (cons ids list-ids) (cons bodie list-bodies) (cons (car names) list-proc-names) (cons (car results) list-results) list-noproc-names list-noproc-results)))
-            
-            (proc-list (cdr exps) (cdr results) (cdr names) list-texps list-ids list-bodies list-proc-names  list-results (cons (car names) list-noproc-names) (cons (car results) list-noproc-results))
-        ))))
-                         
 
 
-
-
-
- (define extend-tenv-recursively
+(define extend-tenv-recursively
    (lambda (result-types names exps tenv)
      (let*(
            (len (length names))
            (vec (make-vector len))
            ;(reult-types (expand-type-expressions result-texps))
-           (tenv-for-body (extend-tenv names vec env))
+           ;(tenv-for-body (extend-tenv names vec tenv))
            
            )
        
@@ -359,29 +343,30 @@
         (lambda (pos body result-type)
           (if (proc? body)
               
-              (cases proc body (cases proc body (procedure (texps ids body)
+              (cases proc body (procedure (texps ids body)
               (let(
 
                    (arg-types (expand-type-expressions texps))
                    
                    )
-                (vector-set! vec pos (proc-type arg-types result-type))))))
+                (vector-set! vec pos (proc-type arg-types result-type)))))
 
               (vector-set! vec pos result-type)
                   
               ))
        (iota len) exps result-types)
 
-       (map (lambda (x) (if (vector? x)) (vector->list x) x) tenv-for-body)
+       
+       (extend-tenv names (vector->list vec) tenv)
 
 
        )))
        
       (define type-of-fusion-lang
         (lambda (result-texps names exps p-body tenv)
-          (let(
+          (let*(
               (result-types (expand-type-expressions result-texps))
-              (env (extend-tenv-recursively result-texps names exps tenv))
+              (env (extend-tenv-recursively result-types names exps tenv))
               
               )
          (for-each
@@ -570,9 +555,12 @@
   (lambda (prim)
     (cases primitiva-binaria prim
       (primitiva-suma () (proc-type (list int-type int-type) int-type))
+      ;(primitiva-suma () (proc-type (list float-type float-type) float-type))
+      
       (primitiva-resta () (proc-type (list int-type int-type) int-type))
       (primitiva-div () (proc-type (list int-type int-type) int-type))
       (primitiva-multi () (proc-type (list int-type int-type) int-type))
+      (primitiva-comparador-igual () (proc-type (list int-type int-type) bool-type))
       (else 'faltan_casos))))
 
 ;types-of-expressions: (list-of <type-exp>) <tenv> -> (list-of <type>)
@@ -1363,4 +1351,7 @@ LOCALS{
 @x=10
 
 }{app(@p @x)}}
+
+
+GLOBALS{int @x=5 (int->int) @p=function(int @x) return @x } PROGRAM{app(@p @x)}
 |#
