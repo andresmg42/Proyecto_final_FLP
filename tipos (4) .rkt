@@ -91,7 +91,10 @@
     ;(globals ("GLOBALS" "{" (arbno identifier "=" expression) "}") globals-exp)
     ;(fusion-lang (globals "," program) fusion-lang-exp)
     ;(program ("PROGRAM" "{" expression "}") a-program)
-    (fusion-lang ("GLOBALS" "{" (arbno type-exp identifier "=" expression) "}" "PROGRAM" "{" expression "}") fusion-exp)
+    (fusion-lang ("GLOBALS" "{" (arbno id-exp "=" expression) "}" "PROGRAM" "{" expression "}") fusion-exp)
+    (id-exp ("const" type-exp identifier) const-exp)
+    (id-exp ("var" type-exp identifier) identifier-var-exp)
+    (expression (id-exp) var-id-exp)
     (expression ("main""("")" "{" "return" expression "}") main-exp)
     (expression (entero) lit-ent-exp)
     (expression (flotante) lit-float-exp)
@@ -301,7 +304,7 @@
 
 (define aux-interpretador
   (lambda (x)
-    (if (type? (type-of-program x)) (eval-program  x) 'error)))
+    (if (type? (type-of-program x)) (eval-program  x) 'error-iterpretador)))
 
 ;***********************************************************************************************************************
 ;*********************************************   Definición tipos     **************************************************
@@ -326,7 +329,7 @@
 (define type-of-program
   (lambda (fusion)
     (cases fusion-lang fusion
-      (fusion-exp (texps idss g-exps p-exp) (type-of-fusion-lang texps idss g-exps p-exp (empty-tenv))))))
+      (fusion-exp (id-exp g-exps p-exp) (type-of-fusion-lang id-exp g-exps p-exp (empty-tenv))))))
 
 
 
@@ -364,9 +367,22 @@
        )))
 
 (define type-of-fusion-lang
-        (lambda (result-texps names exps p-body tenv)
-          (let*(
-              (result-types (expand-type-expressions result-texps))
+        (lambda (ids exps p-body tenv)
+          (letrec(
+              (list-id-exp (lambda (ids list-texps list-names)
+                             (if(null? ids) (list list-texps list-names)
+                                (let(
+                                     (l-exp (cases id-exp (car ids) (const-exp (texp id) (list texp id)) (identifier-var-exp (texp id) (list texp id))))
+                                     
+                                     )
+                                  (list-id-exp (cdr ids) (cons (car l-exp) list-texps) (cons (cadr l-exp) list-names))
+                                  ))))
+              (list-names-ids (list-id-exp ids (list) (list)))
+                                 
+              (names (cadr list-names-ids))
+              
+              (result-types (expand-type-expressions (car list-names-ids)))
+              
               (env (extend-tenv-recursively result-types names exps tenv))
               
               )
@@ -452,14 +468,15 @@
                 (types-of-expressions rands tenv)
                 rator rands exp))
 
-      #|(set-exp (id exp)
+      (set-exp (id exp)
                (let(
-                    (id-type (type-of-expression id tenv))
+                    (id-type (apply-tenv tenv id))
                     (exp-type (type-of-expression exp tenv))
                     )
-                 (chek-equal-type! id-type exp-type exp)
-                 (if (const-type-exp? id
-                 )|#
+                 (check-equal-type! id-type exp-type exp)
+                 id-type
+                 
+                 ))
                      
       #|(let-exp (ids rands body)
                (type-of-let-exp ids rands body tenv))|#
@@ -783,13 +800,15 @@
 (define eval-program
   (lambda (flang)
     (cases fusion-lang flang
-      (fusion-exp (texps ids exps program-body)
+      (fusion-exp (id-exps exps program-body)
                        (let(
+                            #|(list-id-exp (map (lambda (id-e) (cases id-exp id-e (cons-exp (texp identifier) (list  identifier 'const))
+                                             (identifier-exp (texps identifier) (list identifier 'no-const)))) id-exps))|#
                             (env 
                                    (let(
-                                        (args (eval-rands exps (init-env)))
+                                        (bodies (eval-rands exps (empty-env)))
                                         )
-                                     (extend-env-recursively2 ids args (init-env))))
+                                     (extend-env-recursively2 id-exps bodies (empty-env))))
                             
                             )
                          (eval-expression program-body env)
@@ -848,7 +867,7 @@
 (define-datatype environment environment?
   (empty-env-record)
   (extended-env-record
-   (syms (list-of symbol?))
+   (syms (list-of id-exp?))
    (vec vector?)
    (env environment?)))
 
@@ -881,11 +900,11 @@
           env)))))
 
 (define extend-env-recursively2
-  (lambda (names bodies old-env)
+  (lambda (id-exps bodies old-env)
     (let* (
-      (len (length names))
+      (len (length id-exps))
       (vec (make-vector len))
-      (env (extended-env-record names vec old-env)))
+      (env (extended-env-record id-exps vec old-env)))
       
       (for-each
             (lambda (pos body)
@@ -915,7 +934,12 @@
 ;función que busca un símbolo en un ambiente
 (define apply-env
   (lambda (env sym)
-    (deref (apply-env-ref env sym))))
+    (let(
+         (val (apply-env-ref env sym))
+         )
+         
+         (if (reference? val) (deref val)
+             val))))
      ;(apply-env-ref env sym)))
     ;env))
 (define apply-env-ref
@@ -924,10 +948,18 @@
       (empty-env-record ()
                         (eopl:error 'apply-env-ref "No binding for ~s" sym))
       (extended-env-record (syms vals env)
-                           (let ((pos (rib-find-position sym syms)))
+                           (let* (
+                                 (list-ids (map (lambda (id)  (cases id-exp id (const-exp (texp id) id) (identifier-var-exp (texp id) id))) syms))
+                                 (pos (rib-find-position sym list-ids))
+                                 (id (list-ref syms pos))
+                                 (const (cases id-exp id (const-exp (texp id) #t) (identifier-var-exp (texp id) #f)))
+                                 )
                              (if (number? pos)
-                                 (a-ref pos vals)
+                                 (if const (vector-ref vals pos)
+                                 (a-ref pos vals))
                                  (apply-env-ref env sym)))))))
+
+
 
 ;*******************************************************************************************
 ;Referencias
@@ -969,7 +1001,7 @@
 
 (define list-find-position
   (lambda (sym los)
-    (list-index (lambda (sym1) (eqv? sym1 sym)) los)))
+    (list-index (lambda (sym1) (equal? sym1 sym)) los)))
 
 (define list-index
   (lambda (pred ls)
@@ -1140,6 +1172,7 @@
       (lit-ent-exp (datum) datum)
       (lit-float-exp (datum) datum)
       (var-exp (id) (apply-env env id))
+      (var-id-exp (id) (apply-env env id))
       (text-exp (text) text)
       (true-exp () #t)
       (false-exp () #f)
@@ -1195,11 +1228,16 @@
 
       ;set
        (set-exp (id rhs-exp)
+                (let(
+                     (val (apply-env-ref env id))
+                     )
                (begin
+                 (if (reference? val)
                  (setref!
-                  (apply-env-ref env id)
+                  val
                   (eval-expression rhs-exp env))
-                 1))
+                 (eopl:error 'set-exp "inmutable value ~s" val))
+                 1)))
 
       ;block
       (begin-exp (exp exps) 
@@ -1228,7 +1266,7 @@
 
        
               
-      (else 'error)
+      (else 'error-eval-expression)
       )    
     ))
 
@@ -1238,7 +1276,7 @@
         (cases expression (car exps)
           (function-exp (texp ids body)
                     (listas-proc (cdr exps) (cons ids list-ids) (cons body list-bodies)))
-          (else 'error)
+          (else 'error-listas-proc)
              
              ))))
 
@@ -1405,4 +1443,8 @@ LOCALS{
 
 
 GLOBALS{int @x=5 (int->int) @p=function(int @x) return @x } PROGRAM{app(@p @x)}
+
+GLOBALS{ const int @x=5} PROGRAM{BLOCK{set @x=2 @x}}
+
+GLOBALS{ const int @x=5} PROGRAM{set @x=2}
 |#
