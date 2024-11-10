@@ -94,7 +94,7 @@
     (fusion-lang ("GLOBALS" "{" (arbno id-exp "=" expression) "}" "PROGRAM" "{" expression "}") fusion-exp)
     (id-exp ("const" type-exp identifier) const-exp)
     (id-exp ("var" type-exp identifier) identifier-var-exp)
-    ;(id-exp ("proc" type-exp identifier) proc-id-exp)
+    (id-exp ("proc" type-exp identifier) proc-id-exp)
     (expression (id-exp) var-id-exp)
     (expression ("main""("")" "{" "return" expression "}") main-exp)
     (expression (entero) lit-ent-exp)
@@ -367,13 +367,14 @@
 
        )))
 
-(define type-of-fusion-lang
+#|(define type-of-fusion-lang
         (lambda (ids exps p-body tenv)
           (letrec(
+              
               (list-id-exp (lambda (ids list-texps list-names)
                              (if(null? ids) (list list-texps list-names)
                                 (let(
-                                     (l-exp (cases id-exp (car ids) (const-exp (texp id) (list texp id)) (identifier-var-exp (texp id) (list texp id))))
+                                     (l-exp (cases id-exp (car ids) (const-exp (texp id) (list texp id)) (identifier-var-exp (texp id) (list texp id)) (proc-id-exp (texp id) (list texp id))))
                                      
                                      )
                                   (list-id-exp (cdr ids) (cons (car l-exp) list-texps) (cons (cadr l-exp) list-names))
@@ -387,6 +388,56 @@
               (env (extend-tenv-recursively result-types names exps tenv))
               
               )
+         (for-each
+        (lambda (id body result-type)
+          (if (proc? body)
+              (cases proc body (procedure (texps ids body)
+                                          (let(
+                                               (proc-id? (cases id-exp id (const-exp (texp id) #f) (identifier-var-exp (texp id) #f) (proc-id-exp (texp id) #t)))
+                                               (arg-types (expand-type-expressions texps))
+
+                                               )
+                                            (if (not proc-id?) (eopl:error 'fusion-lang "id-exp was not proc")
+                                                
+                                            (check-equal-type!
+                                            (type-of-expression
+                                             body
+                                            (extend-tenv ids arg-types env))
+                                            result-type body))
+
+                                            )))
+                                                                                 
+              
+              
+              (check-equal-type!
+               (type-of-expression body env) result-type body)
+
+        
+              
+              )) ids exps result-types)
+
+          (type-of-expression p-body env))))
+               |#
+(define type-of-fusion-lang
+  (lambda(ids exps p-body tenv)
+ (letrec(
+         (list-id-exp (lambda (ids list-texps list-names)
+                             (if(null? ids) (list list-texps list-names)
+                                (let(
+                                     (l-exp (cases id-exp (car ids) (const-exp (texp id) (list texp id)) (identifier-var-exp (texp id) (list texp id)) (proc-id-exp (texp id) (list texp id))))
+                                     
+                                     )
+                                  (list-id-exp (cdr ids) (cons (car l-exp) list-texps) (cons (cadr l-exp) list-names))
+                                  ))))
+              (l (list-id-exp ids (list) (list)))
+         
+              (result-types (expand-type-expressions (reverse (car l))));AQUI ESTA EL PROBLEMA!
+              (names (cadr l))
+                            
+              (env (extend-tenv-recursively result-types names exps tenv))
+              
+              )
+   
          (for-each
         (lambda (body result-type)
           (if (proc? body)
@@ -410,8 +461,8 @@
               
               ))exps result-types)
 
-          (type-of-expression p-body env))))
-                
+          (type-of-expression p-body env))
+    ))
 
           
           
@@ -950,10 +1001,10 @@
                         (eopl:error 'apply-env-ref "No binding for ~s" sym))
       (extended-env-record (syms vals env)
                            (let* (
-                                 (list-ids (map (lambda (id)  (cases id-exp id (const-exp (texp id) id) (identifier-var-exp (texp id) id))) syms))
+                                 (list-ids (map (lambda (id)  (cases id-exp id (const-exp (texp id) id) (identifier-var-exp (texp id) id) (proc-id-exp (texp id) id))) syms))
                                  (pos (rib-find-position sym list-ids))
                                  (id (list-ref syms pos))
-                                 (const (cases id-exp id (const-exp (texp id) #t) (identifier-var-exp (texp id) #f)))
+                                 (const (cases id-exp id (const-exp (texp id) #t) (identifier-var-exp (texp id) #f) (proc-id-exp (texp id) #f)))
                                  )
                              (if (number? pos)
                                  (if const (vector-ref vals pos)
@@ -1449,5 +1500,5 @@ GLOBALS{ const int @x=5} PROGRAM{BLOCK{set @x=2 @x}}
 
 GLOBALS{ const int @x=5} PROGRAM{set @x=2}
 
-GLOBALS{ const int @x=5 var (int->int) @v=function(int @x) return @x } PROGRAM{@p}
+GLOBALS{var int @x=5 proc (int->int) @p=function(int @x) return @x } PROGRAM{@p}
 |#

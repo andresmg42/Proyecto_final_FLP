@@ -1448,6 +1448,4 @@ GLOBALS{int @x=5 (int->int) @p=function(int @x) return @x } PROGRAM{app(@p @x)}
 GLOBALS{ const int @x=5} PROGRAM{BLOCK{set @x=2 @x}}
 
 GLOBALS{ const int @x=5} PROGRAM{set @x=2}
-
-GLOBALS{ const int @x=5 var (int->int) @v=function(int @x) return @x } PROGRAM{@p}
 |#

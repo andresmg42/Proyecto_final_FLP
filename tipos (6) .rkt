@@ -94,7 +94,7 @@
     (fusion-lang ("GLOBALS" "{" (arbno id-exp "=" expression) "}" "PROGRAM" "{" expression "}") fusion-exp)
     (id-exp ("const" type-exp identifier) const-exp)
     (id-exp ("var" type-exp identifier) identifier-var-exp)
-    ;(id-exp ("proc" type-exp identifier) proc-id-exp)
+    (id-exp ("proc" type-exp identifier) proc-id-exp)
     (expression (id-exp) var-id-exp)
     (expression ("main""("")" "{" "return" expression "}") main-exp)
     (expression (entero) lit-ent-exp)
@@ -210,7 +210,7 @@
     
 
     ;caracteristicas adicionales
-    (type-exp ("list" "<" type-exp ">") list-type-exp)
+    ;(type-exp ("list" "<" type-exp ">") list-type-exp)
     (unary-primitive ("zero?") zero-test-prim)    
     (type-exp ("int") int-type-exp)
     (type-exp ("float") float-type-exp)
@@ -222,8 +222,8 @@
     (type-exp ("list<bool>") list-bool-type)
     (type-exp ("list<strign>") list-string-type)
     (type-exp ("string") string-type-exp)
-    (type-exp ("proc") proc-type-exp2)
-    (type-exp ("const" type-exp) const-type-exp)
+    ;(type-exp ("proc") proc-type-exp2)
+    ;(type-exp ("const" type-exp) const-type-exp)
     
     
     ))
@@ -234,25 +234,29 @@
 
 
 (define apply-primitive-bin
-  (lambda (prim-bin args)
+  (lambda (prim-bin arg1 arg2)
+    (let(
+        (exp1 (if (pair? arg1) (car arg1) arg1))
+        (exp2 (if (pair? arg2) (car arg2) arg2))
+        )
     (cases primitiva-binaria prim-bin
-      (primitiva-suma () (+ (car args) (cadr args)))
-      (primitiva-resta () (- (car args) (cadr args)))
-      (primitiva-div () (/ (car args) (cadr args)))
-      (primitiva-multi () (* (car args) (cadr args)))
-      (primitiva-concat () (string-append (car args) (cadr args)))
-      (primitiva-mayor () (valor-verdad? (comparar (car args) (cadr args) '>)))
-      (primitiva-menor () (valor-verdad? (comparar (car args) (cadr args) '<)))
-      (primitiva-mayor-igual () (valor-verdad? (comparar (car args) (cadr args) '>=)))
-      (primitiva-menor-igual () (valor-verdad? (comparar (car args) (cadr args) '<=)))
-      (primitiva-diferente () (valor-verdad? (not (eqv? (car args) (cadr args)))))
-      (primitiva-comparador-igual () (valor-verdad? (equal? (car args) (cadr args))))
+      (primitiva-suma () (+ exp1  exp2))
+      (primitiva-resta () (- exp1 exp2))
+      (primitiva-div () (/ exp1 exp2))
+      (primitiva-multi () (* exp1 exp2))
+      (primitiva-concat () (string-append exp1 exp2))
+      (primitiva-mayor () (valor-verdad? (comparar exp1  exp2 '>)))
+      (primitiva-menor () (valor-verdad? (comparar exp1  exp2 '<)))
+      (primitiva-mayor-igual () (valor-verdad? (comparar  exp1 exp2 '>=)))
+      (primitiva-menor-igual () (valor-verdad? (comparar  exp1 exp2 '<=)))
+      (primitiva-diferente () (valor-verdad? (not (eqv? exp1 exp2))))
+      (primitiva-comparador-igual () (valor-verdad? (equal? exp1 exp2)))
       (else "faltan casos bianrio")
  
       
       
                        
-      )))
+      ))))
 
 ;Funcion que resuelve las operaciones de cada primitiva unaria
 ;apply-unary-primitive: <primitiva> <list-of-expression> -> numero
@@ -335,17 +339,27 @@
 
 
 (define extend-tenv-recursively
-   (lambda (result-types names exps tenv)
+   (lambda (id-exps exps tenv)
      (let*(
-           (len (length names))
+           (len (length id-exps))
            (vec (make-vector len))
+           (names (make-vector len))
            ;(reult-types (expand-type-expressions result-texps))
            ;(tenv-for-body (extend-tenv names vec tenv))
            
            )
        
        (for-each
-        (lambda (pos body result-type)
+        (lambda (pos body id)
+          
+          (let*(
+              (list-name-texp (cases id-exp id (const-exp (texp name) (list name texp)) (identifier-var-exp (texp name) (list name texp)) (proc-id-exp (texp name) (list name texp))))
+              
+              
+              
+              (result-type (expand-type-expression (cadr list-name-texp)))
+               
+               )
           (if (proc? body)
               
               (cases proc body (procedure (texps ids body)
@@ -358,22 +372,26 @@
 
               (vector-set! vec pos result-type)
                   
-              ))
-       (iota len) exps result-types)
+              )
+            (vector-set! names  pos (car list-name-texp))
+            
+            ))
+       (iota len) exps id-exps)
 
        
-       (extend-tenv names (vector->list vec) tenv)
+       (extend-tenv (vector->list names) (vector->list vec) tenv)
 
 
        )))
 
-(define type-of-fusion-lang
+#|(define type-of-fusion-lang
         (lambda (ids exps p-body tenv)
           (letrec(
+              
               (list-id-exp (lambda (ids list-texps list-names)
                              (if(null? ids) (list list-texps list-names)
                                 (let(
-                                     (l-exp (cases id-exp (car ids) (const-exp (texp id) (list texp id)) (identifier-var-exp (texp id) (list texp id))))
+                                     (l-exp (cases id-exp (car ids) (const-exp (texp id) (list texp id)) (identifier-var-exp (texp id) (list texp id)) (proc-id-exp (texp id) (list texp id))))
                                      
                                      )
                                   (list-id-exp (cdr ids) (cons (car l-exp) list-texps) (cons (cadr l-exp) list-names))
@@ -388,18 +406,23 @@
               
               )
          (for-each
-        (lambda (body result-type)
+        (lambda (id body result-type)
           (if (proc? body)
               (cases proc body (procedure (texps ids body)
                                           (let(
+                                               (proc-id? (cases id-exp id (const-exp (texp id) #f) (identifier-var-exp (texp id) #f) (proc-id-exp (texp id) #t)))
                                                (arg-types (expand-type-expressions texps))
 
                                                )
+                                            (if (not proc-id?) (eopl:error 'fusion-lang "id-exp was not proc")
+                                                
                                             (check-equal-type!
                                             (type-of-expression
                                              body
                                             (extend-tenv ids arg-types env))
-                                            result-type body))))
+                                            result-type body))
+
+                                            )))
                                                                                  
               
               
@@ -408,10 +431,63 @@
 
         
               
-              ))exps result-types)
+              )) ids exps result-types)
 
           (type-of-expression p-body env))))
-                
+               |#
+(define type-of-fusion-lang
+  (lambda(id-exps exps p-body tenv)
+ (let(
+         #|(list-id-exp (lambda (ids list-texps list-names)
+                             (if(null? ids) (list list-texps list-names)
+                                (let(
+                                     (l-exp (cases id-exp (car ids) (const-exp (texp id) (list texp id)) (identifier-var-exp (texp id) (list texp id)) (proc-id-exp (texp id) (list texp id))))
+                                     
+                                     )
+                                  (list-id-exp (cdr ids) (cons (car l-exp) list-texps) (cons (cadr l-exp) list-names))
+                                  ))))
+              (l (list-id-exp ids (list) (list)))
+         
+              (result-types (expand-type-expressions (reverse (car l))));AQUI ESTA EL PROBLEMA!
+              (names (cadr l))|#
+                            
+              (env (extend-tenv-recursively id-exps exps tenv))
+              
+              )
+   
+         (for-each
+        (lambda (body id)
+          (let*(
+               (texp (cases id-exp id (const-exp (texp name) texp) (identifier-var-exp (texp name) texp) (proc-id-exp (texp name) texp)))
+               ;(proc-id-exp? (cases id-exp id (proc-id-exp (texp name) #t) (else #f)))
+               ;(const-id-exp? (cases id-exp id (const-id-exp (texp name) #t) (else #f)))
+               ;(var-id-exp? (cases id-exp id (var-id-exp (texp name) #t) (else #f)))
+               (result-type (expand-type-expression texp))
+               
+               )
+            
+              (if (proc? body) 
+              
+              (cases proc body (procedure (texps ids body)
+                                          (let
+                                               (
+                                               (arg-types (expand-type-expressions texps))
+
+                                               )
+                                            (check-equal-type!
+                                            (type-of-expression
+                                             body
+                                            (extend-tenv ids arg-types env))
+                                            result-type body))))
+              
+              
+            (check-equal-type!
+               (type-of-expression body env) result-type body)
+
+              ))) exps id-exps)
+
+          (type-of-expression p-body env)
+   )))
 
           
           
@@ -452,7 +528,7 @@
                 (type-of-proc-exp texps ids body tenv))
       (primapp-un-exp (prim rands)
                    (type-of-application
-                    (type-of-primitive prim rands)
+                    (type-of-primitive prim rands tenv)
                     (types-of-expressions rands tenv)
                     prim rands exp))
       
@@ -559,7 +635,16 @@
 ;type-of-primitive: <primitive> -> <type>
 ; función auxiliar para determinar el tipo de una primitiva
 (define type-of-primitive
-  (lambda (prim rands)
+  (lambda (prim rands tenv)
+     (let*(
+        (arg-types (types-of-expressions rands tenv))
+        (type (car arg-types))
+        (equal-types? ((list-of (lambda(type) (equal? type (car arg-types)))) arg-types))
+        ;(len (length arg-types))
+        ;(make-list-types (lambda (type len) (if (equal? len 0) '() (cons type (make-list-types type (- len 1))))))
+        
+        
+        )
     (cases unary-primitive prim
       (primitive-lenght () (proc-type (list string-type) int-type))
       ;(primitive-add1 () (proc-type (list int-type) int-type))
@@ -567,7 +652,7 @@
       (primitive-neg-boolean () (proc-type (list bool-type) bool-type))
       ;listas
       (primitive-empty () (proc-type (list list-type) bool-type))
-      (primitive-list? () (proc-type (list list-type) bool-type))
+      ;(primitive-list? () (proc-type (list list-type) bool-type))
       ;(primitive-head () (proc-type (list list-type) (let( (head-type (type-of-expression (car rands))) head-type))))
       (primitive-tail () (proc-type (list list-type) list-type))
       
@@ -578,9 +663,11 @@
       
       (zero-test-prim ()
                       (proc-type (list int-type) bool-type))
+
+      (primitive-make-list () (proc-type (if equal-types? arg-types (eopl:error 'type-of-primitive "the list types weren't equals")) (list-type type)))  
       (else 'faltan_casos)
 
-      )))
+      ))))
 
 (define type-of-primitive-bin
   (lambda (prim exp1 exp2 tenv)
@@ -716,11 +803,9 @@
 (define list-empty-type
   (atomic-type 'empty))
 
-(define list-type
-  (atomic-type 'list))
 
-(define const-type
-  (atomic-type 'const))
+(define list-type
+  (lambda (typ) (atomic-type (string->symbol (string-append "list<" (symbol->string (cases type typ (atomic-type (t) t) (else (eopl:error 'list-type "no atomic type"))))  ">"  )))))
 
 
 
@@ -731,12 +816,16 @@
       (bool-type-exp () bool-type)
       (float-type-exp () float-type)
       (string-type-exp () string-type)
-      (list-type-exp (type-exp) list-type)
+      ;(list-type-exp (type-exp) list-type)
+      (list-int-type () (list-type int-type))
+      (list-float-type () (list-type float-type))
+      (list-bool-type () (list-type bool-type))
+      (list-string-type () (list-type string-type))
       (proc-type-exp (arg-texps result-texp)
                      (proc-type
                       (expand-type-expressions arg-texps)
                       (expand-type-expression result-texp)))
-      (const-type-exp (type-exp) (expand-type-expression type-exp))
+      
       (else 'faltancasos)
       )))
 
@@ -820,12 +909,12 @@
                                                                  
 
 ;ambiente inicial
-(define init-env
+#|(define init-env
   (lambda ()
     (extend-env
      '(@a @b @c @d @e @f)
      '(1 2 3 "hola" "FLP" (non-empty-pair 'a 'b) )
-     (empty-env))))
+     (empty-env))))|#
 
 
 ; funciones auxiliares para aplicar eval-expression a cada elemento de una 
@@ -847,8 +936,9 @@
   (lambda (proc args)
     (cases procval proc
       (closure (ids body env)
-               (eval-expression body (extend-env ids args env))))))
-
+             (car (eval-expression body (extend-env ids (map (lambda (arg) (car arg)) args) (map (lambda (arg) (cadr arg)) args) env)))))))
+               
+               
 
 
 
@@ -868,8 +958,9 @@
 (define-datatype environment environment?
   (empty-env-record)
   (extended-env-record
-   (syms (list-of id-exp?))
+   (syms (list-of symbol?))
    (vec vector?)
+   (const (list-of boolean?))
    (env environment?)))
 
 (define scheme-value? (lambda (v) #t))
@@ -884,28 +975,20 @@
 ;extend-env: <list-of symbols> <list-of numbers> enviroment -> enviroment
 ;función que crea un ambiente extendido
 (define extend-env
-  (lambda (syms vals env)
-    (extended-env-record syms (list->vector vals) env)))
+  (lambda (syms vals consts env)
+    (extended-env-record syms (list->vector vals) consts env)))
 
-;extend-env-recursively: <list-of symbols> <list-of <list-of symbols>> <list-of expressions> environment -> environment
-;función que crea un ambiente extendido para procedimientos recursivos
-(define extend-env-recursively
-  (lambda (proc-names idss bodies old-env)
-    (let ((len (length proc-names)))
-      (let ((vec (make-vector len)))
-        (let ((env (extended-env-record proc-names vec old-env)))
-          (for-each
-            (lambda (pos ids body)
-              (vector-set! vec pos (closure ids body env)))
-            (iota len) idss bodies)
-          env)))))
+
 
 (define extend-env-recursively2
   (lambda (id-exps bodies old-env)
     (let* (
       (len (length id-exps))
       (vec (make-vector len))
-      (env (extended-env-record id-exps vec old-env)))
+      (names (map (lambda (id) (cases id-exp id (const-exp (texp name) name) (identifier-var-exp (texp name) name) (proc-id-exp (texp name) name))) id-exps))
+      (consts (map (lambda (id) (cases id-exp id (const-exp (texp name) #t) (else #f))) id-exps))
+      (env (extended-env-record names vec consts old-env ))
+      )
       
       (for-each
             (lambda (pos body)
@@ -939,7 +1022,7 @@
          (val (apply-env-ref env sym))
          )
          
-         (if (reference? val) (deref val)
+         (if (reference? (car val)) (list (deref (car val)) (cadr val))
              val))))
      ;(apply-env-ref env sym)))
     ;env))
@@ -948,16 +1031,18 @@
     (cases environment env
       (empty-env-record ()
                         (eopl:error 'apply-env-ref "No binding for ~s" sym))
-      (extended-env-record (syms vals env)
+      (extended-env-record (syms vals consts env)
                            (let* (
-                                 (list-ids (map (lambda (id)  (cases id-exp id (const-exp (texp id) id) (identifier-var-exp (texp id) id))) syms))
-                                 (pos (rib-find-position sym list-ids))
-                                 (id (list-ref syms pos))
-                                 (const (cases id-exp id (const-exp (texp id) #t) (identifier-var-exp (texp id) #f)))
+                                 
+                                 (pos (rib-find-position sym syms))
+                                 (const (list-ref consts pos))
+                                 
+                                 
                                  )
                              (if (number? pos)
-                                 (if const (vector-ref vals pos)
-                                 (a-ref pos vals))
+                                 (if const (list (vector-ref vals pos) const)
+                                 (list (a-ref pos vals) const)
+                                 )
                                  (apply-env-ref env sym)))))))
 
 
@@ -1173,7 +1258,6 @@
       (lit-ent-exp (datum) datum)
       (lit-float-exp (datum) datum)
       (var-exp (id) (apply-env env id))
-      (var-id-exp (id) (apply-env env id))
       (text-exp (text) text)
       (true-exp () #t)
       (false-exp () #f)
@@ -1186,7 +1270,7 @@
       (primapp-bin-exp (exp1 prim exp2)
                   (let ((arg1 (eval-expression exp1 env))
                         (arg2 (eval-expression exp2 env)))
-                    (apply-primitive-bin prim (list arg1 arg2))))
+                    (apply-primitive-bin prim  arg1 arg2)))
 
       (if-exp(test-exp true-exp false-exp)
               (if(valor-verdad? (eval-expression test-exp env))
@@ -1194,17 +1278,20 @@
                 (eval-expression false-exp env)))
 
       (localVar-exp(ids exps body)
-                   (let ((args (eval-rands exps env)))
+                   #|(let ((args (eval-rands exps env)))
                    (eval-expression body
-                                    (extend-env ids args env))))
+                                    (extend-env ids args env)))|# 1)
 
       (function-exp (texps ids body) (procedure texps ids body))
       
       ;(proc-exp (name ids body) (procedure ids body))
 
       (app-exp (rator rands)
-                 (let ((proc (eval-expression rator env))
-                     (args (eval-rands rands env)))
+                 (let (
+                     (proc (car (eval-expression rator env)))
+                     (args (eval-rands rands env))
+                     
+                     )
                      (if (procval? proc)
                          (apply-procedure proc args)
                          (eopl:error 'eval-expression
@@ -1213,11 +1300,15 @@
                  )
                )
       
-      (letrec-exp (names  exps letrec-body)
+      #|(app-exp (rator rands)
+               (args (eval-rands rands env))|#
+      
+      
+      #|(letrec-exp (names  exps letrec-body)
                    (let (
                          (args (eval-rands exps env))
                    )(eval-expression letrec-body (extend-env-recursively2 names args env)
-                     )))
+                     )))|#
       
 ;-------------------------------------------------------------------------
       
@@ -1251,7 +1342,7 @@
                               (cdr exps)))))
       ;locals
 
-      (locals-exp (names  exps l-body-exp l-body-exps)
+      #|(locals-exp (names  exps l-body-exp l-body-exps)
                   (let* (
                          (args (eval-rands exps env))
                          (env (extend-env-recursively2 names args env))
@@ -1262,7 +1353,7 @@
                         (loop (eval-expression (car exps) 
                                                env)
                               (cdr exps))))
-                    ))
+                    ))|#
       ;globals
 
        
@@ -1291,104 +1382,7 @@
 
             
 ;-----------------------------------------------------------------------------------------------
-#|
-PUNTOS DEL TALLER
-a) sumarDigitos
 
-La funcion @modulo calcula el resto de divir un numero entre otro
-@modulo: number x number => number
-usage: eval @modulo(@a,@b) finalEval => residuo de dividir @a entre @b
-
-La funcion @divEntera calcula la division entera entre 2 numero
-@divEnt: number x number => number
-usage: eval @divEntera(@a,@b) finalEval => resultado entero de divir @a entre @b
-
-La funcion @sumarDigitos suma los digitos de una numero dado
-@sumarDigitos: number => number
-usage: eval @sumarDititos(@a) finalEval => resultado de sumar lo digitos de @a
-
-letrec @modulo(@n,@m)= Si (@n<@m) {@n} sino {eval @modulo((@n~@m),@m) finalEval}
-@divEntera(@t,@r)= ((@t/@r) ~ (eval @modulo (@t,@r) finalEval / @r))
-@sumarDigitos(@h)= Si (@h==0) {0} sino 
-{(eval @modulo (@h,10) finalEval + eval@sumarDigitos(eval @divEntera (@h,10) finalEval) finalEval)}
-in
-eval @sumarDigitos (147) finalEval
-----------------------------------------------------------------------------------------
-b)
-Funcion que retorna el factorial de un numero n
-@fact: number => number
-usage: eval @fact(@n) finalEval => factorial de @n
-
-Factorial de 5
-letrec
-@fact(@x)= Si (@x == 0) {1} sino {(@x * eval @fact((@x ~ 1)) finalEval)}
-in
-eval @fact(5) finalEval
-
-
-Factorial de 10
-
-letrec
-@fact(@x)= Si (@x == 0) {1} sino {(@x * eval @fact((@x ~ 1)) finalEval)}
-in
-eval @fact(10) finalEval
-
-----------------------------------------------------------------------------------------
-c) Potencia
-
-Funcion que calcula la potencia de un numero a elevado a la potencia b
-@potencia: number x number => number
-usage: eval @potencia(@a,@b) finalEval => a elevado a la b
-
-letrec
-@potencia(@a,@b) = Si (@b == 1) {@a} sino
-                      {Si (@b == 0) {1} sino
-                           {(@a * eval @potencia(@a,(@b ~ 1)) finalEval)}} 
-in
-eval @potencia(4,2) finalEval
------------------------------------------------------------------------------------------
-d) SumarRango
-
-Funcion que retorna la suma de los numeros en un rango positivo
-@sumRan: number x number => number
-usage: eval @sumRan(@a,@b) => suma de los numeros desde @a hasta @b
-
-letrec
-@sumRan(@a,@b) = Si (@a == @b) {@a} sino {(@a + eval @sumRan((@a + 1),@b) finalEval)}
-in
-eval @sumRan(2,5) finalEval
-
------------------------------------------------------------------------------------------
-e) Decorators
-
-Funcion decoradora que retorna hola al inicio de un string
-@saludar: procedure => String
-usage: eval @decorate() finalEval => "hola:Algun_string"
-
-declarar(
-@integrantes = procedure(){"Andres_Y_Daniel"};
-@saludar = procedure(@noms){procedure(){("Hola: " concat eval @noms() finalEval)}};
-){
-declarar(@decorate = eval @saludar(@integrantes) finalEval;)
-{eval @decorate()  finalEval}}
-
-
-
-f)
-Funcion decoradora que recibe un string y lo agregar al final del otro string
-@decorate: string => string
-usage: @decorate(mensaje) => "algun_stringmensaje"
-
-declarar(
-@integrantes = procedure(){"Andres_Y_Daniel"};
-@saludar = procedure(@noms){procedure(){("Hola: " concat eval @noms() finalEval)}};
-){
-declarar(@evaluado = eval @saludar(@integrantes) finalEval;)
-{
-declarar(@decorate = procedure(@mensaje){
-(eval @evaluado() finalEval concat @mensaje)};)
-{eval @decorate("Estudiantes_de_FLP") finalEval}}}
-|#
 
 
 
@@ -1449,5 +1443,5 @@ GLOBALS{ const int @x=5} PROGRAM{BLOCK{set @x=2 @x}}
 
 GLOBALS{ const int @x=5} PROGRAM{set @x=2}
 
-GLOBALS{ const int @x=5 var (int->int) @v=function(int @x) return @x } PROGRAM{@p}
+GLOBALS{var int @x=5 proc (int->int) @p=function(int @x) return @x } PROGRAM{@p}
 |#
