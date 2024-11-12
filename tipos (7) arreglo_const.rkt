@@ -217,12 +217,8 @@
     (type-exp ("String") String-type-exp)
     (type-exp ("bool") bool-type-exp)
     (type-exp ("(" (separated-list type-exp "*") "->" type-exp ")") proc-type-exp)
-    ;(type-exp ("list<int>") list-int-type)
-    ;(type-exp ("list<float>") list-float-type)
-    ;(type-exp ("list<bool>") list-bool-type)
-    ;(type-exp ("list<strign>") list-string-type)
-    ;(type-exp ("string") string-type-exp)
     (type-exp ("list" "<" type-exp ">") list-type-exp)
+    (type-exp ("vector" "<" type-exp ">") vector-type-exp)
     ;(type-exp ("proc") proc-type-exp2)
     ;(type-exp ("const" type-exp) const-type-exp)
     
@@ -235,29 +231,25 @@
 
 
 (define apply-primitive-bin
-  (lambda (prim-bin arg1 arg2)
-    (let(
-        (exp1 (if (pair? arg1) (car arg1) arg1))
-        (exp2 (if (pair? arg2) (car arg2) arg2))
-        )
+  (lambda (prim-bin args)
     (cases primitiva-binaria prim-bin
-      (primitiva-suma () (+ exp1  exp2))
-      (primitiva-resta () (- exp1 exp2))
-      (primitiva-div () (/ exp1 exp2))
-      (primitiva-multi () (* exp1 exp2))
-      (primitiva-concat () (string-append exp1 exp2))
-      (primitiva-mayor () (valor-verdad? (comparar exp1  exp2 '>)))
-      (primitiva-menor () (valor-verdad? (comparar exp1  exp2 '<)))
-      (primitiva-mayor-igual () (valor-verdad? (comparar  exp1 exp2 '>=)))
-      (primitiva-menor-igual () (valor-verdad? (comparar  exp1 exp2 '<=)))
-      (primitiva-diferente () (valor-verdad? (not (eqv? exp1 exp2))))
-      (primitiva-comparador-igual () (valor-verdad? (equal? exp1 exp2)))
+      (primitiva-suma () (+ (car args) (cadr args)))
+      (primitiva-resta () (- (car args) (cadr args)))
+      (primitiva-div () (/ (car args) (cadr args)))
+      (primitiva-multi () (* (car args) (cadr args)))
+      (primitiva-concat () (string-append (car args) (cadr args)))
+      (primitiva-mayor () (valor-verdad? (comparar (car args) (cadr args) '>)))
+      (primitiva-menor () (valor-verdad? (comparar (car args) (cadr args) '<)))
+      (primitiva-mayor-igual () (valor-verdad? (comparar (car args) (cadr args) '>=)))
+      (primitiva-menor-igual () (valor-verdad? (comparar (car args) (cadr args) '<=)))
+      (primitiva-diferente () (valor-verdad? (not (eqv? (car args) (cadr args)))))
+      (primitiva-comparador-igual () (valor-verdad? (equal? (car args) (cadr args))))
       (else "faltan casos bianrio")
  
       
       
                        
-      ))))
+      )))
 
 ;Funcion que resuelve las operaciones de cada primitiva unaria
 ;apply-unary-primitive: <primitiva> <list-of-expression> -> numero
@@ -267,15 +259,15 @@
       (primitive-lenght () (string-length (car arg)))
       (primitive-add1 () (+ 1 (car arg)))
       (primitive-sub1 () (- (car arg) 1))
-      (primitive-neg-boolean () (if (eqv? (car arg) "true") "false"
-                                    "true"))
+      (primitive-neg-boolean () (not (car arg)))
+                                    
       ;listas
-      (primitive-empty () (valor-verdad? (equal? (car arg) "[]")))
-      (primitive-head () (caaar arg))
-      (primitive-tail () (cdr (caar arg)))
+      (primitive-empty () (null? (car arg)))
+      (primitive-head () (caar arg))
+      (primitive-tail () (cdr (car arg)))
       (primitive-append-list () (append (car arg) (cadr arg)))
       (primitive-make-list () (if (null? (car arg)) '() arg))
-      (primitive-list? () (pair? (caar arg)))
+      (primitive-list? () (valor-verdad? (pair? arg)))
       ;vectores
       (primitive-vector? () (valor-verdad? (vector? (car arg))))
       (primitive-make-vec () (list->vector arg))
@@ -292,6 +284,7 @@
       (primitive-append-dict () ( append-dict (car arg) (cadr arg) (caddr arg)))
       (primitive-keys-dict () (caar arg))
       (primitive-values-dict () (vector->list (cadr (car arg))))
+      
       (else "faltan casos unario")
       )))
 
@@ -644,7 +637,7 @@
         (arg-types (types-of-expressions rands tenv))
         (type  (if (not (null? arg-types)) (car arg-types) (eopl:error 'type-of-primitive "types not found"))) 
         (equal-types? (or ((list-of (lambda(type) (equal? type (car arg-types)))) arg-types) (equal? type list-empty-type)))
-        (validate-type?  (or (equal? type float-type) (equal? type int-type) (equal? type bool-type) (equal? type string-type) (equal? type list-empty-type))) 
+        (validate-type? (lambda (t) (or (equal? t float-type) (equal? t int-type) (equal? t bool-type) (equal? t string-type)))) 
         ;(len (length arg-types))
         ;(make-list-types (lambda (type len) (if (equal? len 0) '() (cons type (make-list-types type (- len 1))))))
         
@@ -676,39 +669,34 @@
       
       (primitive-tail () (proc-type (list type) type))
       
-      (primitive-make-list () (proc-type (if (and equal-types? validate-type?) arg-types (eopl:error 'type-of-primitive "the list types weren't equals or weren't correct type")) (list-type type)))
+      (primitive-make-list () (proc-type (if (and equal-types? (validate-type? type)) arg-types (eopl:error 'type-of-primitive "the list types weren't equals or weren't correct type")) (list-type type)))
 
-      (primitive-empty () (proc-type (list list-empty-type) bool-type))
+      (primitive-empty () (proc-type (if (list-type? type) (list type) (eopl:error 'type-of-primitive "~s wasn't list-type" type)) bool-type))
 
-      ;(primitive-append-list () (proc-type (
-      
+      (primitive-append-list () (proc-type (if (and equal-types? (list-type? type)) (list type type) (eopl:error 'type-of-primitive "args-types didn't equals or weren't list-type")) type))
 
-      
+      ;vectores
 
-      
+      (primitive-vector? () (proc-type (list type) bool-type))
+
+      (primitive-make-vec () (proc-type (if (and equal-types? (validate-type? type)) arg-types (eopl:error 'type-of-primitive "the list types weren't equals or weren't correct type")) (vector-type type)))
+
+     (primitive-make-vec-zise () (proc-type (list int-type (if (validate-type? (cadr arg-types)) (cadr arg-types) (eopl:error "types not supported"))) (vector-type (cadr arg-types))))
+
+     (primitive-ref-vector () (proc-type (list (if (vector-type? type) type (eopl:error 'type-of-primitive "~s wasn't vector-type" type)) int-type) type)) 
       
       (else 'faltan_casos)
 
       ))))
 
- ;funcion que saca el tipo de los elementos de un tipo lista
-(define get-type-list
-  (lambda (t)
-    (let(
-         (s (cases type t (atomic-type (sym) sym) (else (eopl:error 'get-type-list "given: proc type ,expected: list type"))))
-         )
-      (cond
-        [(equal? s 'list<int>) int-type]
-        [(equal? s 'list<float>) float-type]
-        [(equal? s 'list<bool>) bool-type]
-        [(equal? s 'list<string>) string-type]
-        [else (eopl:error 'get-type-list: "type not supported: ~s" s)]))))
-        
+
+                                      
+                                      
   
 
 (define type-of-primitive-bin
   (lambda (prim exp1 exp2 tenv)
-    (let(
+    (let*(
          (exp1-type  (type-of-expression exp1 tenv))
           (exp2-type (type-of-expression exp2 tenv))
           (chequeo-int-float (lambda(exp1-type exp2-type)
@@ -725,7 +713,7 @@
                                     (proc-type (list t1 t2) bool-type)
                                     (eopl:error 'primitive-bin "types didn't support"))))
           (chequeo-concat (lambda (t1 t2)
-                                 (if (and (equal? t1 string-type) (check-equal-type! t1 t2)) (proc-type (list string-type string-type) string-type)
+                                 (if (and (equal? t1 string-type) (check-equal-type! t1 t2 exp1-type)) (proc-type (list string-type string-type) string-type)
                                      (eopl:error 'primitive-bin
                     "Types didn't supported. given: ~s,~s. expected: string string"
                     (type-to-external-form t1)
@@ -846,6 +834,9 @@
 
 (define list-type
   (lambda (typ) (atomic-type (string->symbol (string-append "list<" (symbol->string (cases type typ (atomic-type (t) t) (else (eopl:error 'list-type "no atomic type"))))  ">"  )))))
+       
+(define vector-type
+  (lambda (typ) (atomic-type (string->symbol (string-append "vector<" (symbol->string (cases type typ (atomic-type (t) t) (else (eopl:error 'list-type "no atomic type"))))  ">"  )))))       
 
 
 
@@ -857,11 +848,7 @@
       (float-type-exp () float-type)
       (String-type-exp () string-type)
       (list-type-exp (ty-e) (list-type (expand-type-expression ty-e)))
-      ;(list-type-exp (type-exp) list-type)
-      ;(list-int-type () (list-type int-type))
-      ;(list-float-type () (list-type float-type))
-      ;(list-bool-type () (list-type bool-type))
-      ;(list-string-type () (list-type string-type))
+      (vector-type-exp (ty-e) (vector-type (expand-type-expression ty-e)))
       (proc-type-exp (arg-texps result-texp)
                      (proc-type
                       (expand-type-expressions arg-texps)
@@ -977,10 +964,21 @@
   (lambda (proc args)
     (cases procval proc
       (closure (ids body env)
-              (if ((list-of pair?) args) 
-             (eval-expression body (extend-env ids (map (lambda (arg) (car arg)) args) (map (lambda (arg) (cadr arg)) args) env))
+               (cases expression body
+                 (set-exp (id rhs-exp)
+                          (eval-expression body env))
+                 (else (eval-expression body (extend-env ids args (make-boolean-list (length args) #f) env)))
+                 )
+               )
+      )
+    )
+  )
+                      
+              #|
              (eval-expression body (extend-env ids args (make-boolean-list (length args) #f) env))
-               )))))
+               )))))|#
+             
+           
                
                
 
@@ -1066,7 +1064,7 @@
          (val (apply-env-ref env sym))
          )
          
-         (if (reference? (car val)) (list (deref (car val)) (cadr val))
+         (if (reference? val) (deref val)
              val))))
      ;(apply-env-ref env sym)))
     ;env))
@@ -1087,8 +1085,8 @@
                                  (let(
                                       (const (list-ref consts pos))
                                       )
-                                 (if const (list (vector-ref vals pos) const)
-                                 (list (a-ref pos vals) const)
+                                 (if const (vector-ref vals pos) 
+                                 (a-ref pos vals)
                                  ))
                                  (apply-env-ref env sym)))))))
 
@@ -1314,10 +1312,11 @@
                   (let ((arg (eval-rands rand env)))
                    (apply-unary-primitive prim arg)))
       
+      
       (primapp-bin-exp (exp1 prim exp2)
                   (let ((arg1 (eval-expression exp1 env))
                         (arg2 (eval-expression exp2 env)))
-                    (apply-primitive-bin prim  arg1 arg2)))
+                    (apply-primitive-bin prim (list arg1 arg2))))
 
       (if-exp(test-exp true-exp false-exp)
               (if(valor-verdad? (eval-expression test-exp env))
@@ -1335,7 +1334,7 @@
 
       (app-exp (rator rands)
                  (let (
-                     (proc (car (eval-expression rator env)))
+                     (proc (eval-expression rator env))
                      (args (eval-rands rands env))
                      
                      )
@@ -1368,7 +1367,7 @@
       ;set
        (set-exp (id rhs-exp)
                 (let(
-                     (val (car (apply-env-ref env id)))
+                     (val (apply-env-ref env id))
                      )
                (begin
                  (if (reference? val)
@@ -1419,18 +1418,57 @@
              
              ))))
 
+;data-type para manejar los procedimientos sin la clausura
 (define-datatype proc proc?
   (procedure
    (texps (list-of type-exp?))
    (ids (list-of symbol?))
    (exp expression?)))
 
-
+;funciones auxiliares para listas-----------------------------------------------------------------------------------------
 (define make-boolean-list
   (lambda (zise bool)
     (if (equal? zise 0) '()
         (cons bool (make-boolean-list (- zise 1) bool)))))
 
+ ;funcion que saca el tipo de los elementos de un tipo lista
+(define get-type-list
+  (lambda (t)
+    (let(
+         (s (cases type t (atomic-type (sym) sym) (else (eopl:error 'get-type-list "given: proc type ,expected: list type"))))
+         )
+      (cond
+        [(equal? s 'list<int>) int-type]
+        [(equal? s 'list<float>) float-type]
+        [(equal? s 'list<bool>) bool-type]
+        [(equal? s 'list<string>) string-type]
+        [else (eopl:error 'get-type-list: "type not supported: ~s" s)]))))
+
+;funcion que comprueba si un type es de la forma list<type>       
+(define list-type?
+  (lambda (t)
+    (cases type t (atomic-type (ty) (or
+                                      (equal? ty 'list<int>)
+                                      (equal? ty 'list<float>)
+                                      (equal? ty 'list<bool>)
+                                      (equal? ty 'list<String>)))
+      (else (eopl:error 'type-of-primitive "~s wasn't atomic type" t))
+      )
+
+    ))
+       
+; funcion que valida si un type des de typo vector<type>       
+(define vector-type?
+  (lambda (t)
+    (cases type t (atomic-type (ty) (or
+                                      (equal? ty 'vector<int>)
+                                      (equal? ty 'vector<float>)
+                                      (equal? ty 'vector<bool>)
+                                      (equal? ty 'vector<String>)))
+      (else (eopl:error 'type-of-primitive "~s wasn't atomic type" t))
+      )
+
+    ))
             
 ;-----------------------------------------------------------------------------------------------
 
@@ -1508,4 +1546,15 @@ proc (int->int) @p= function(int @x)  return Si /@x == 0/ {1} sino {/@x * app(@p
 
 var list<int> @list= make-list(1 2 3)
 }PROGRAM{ head(@list)}
+
+ GLOBALS{
+var int @x=5
+proc (int->int) @p= function(int @x)  return Si /@x == 0/ {1} sino {/@x * app(@p /@x ~ 1/)/}
+var String @s="hola_"
+var list<int> @list= make-list(1 2 3)
+var bool @b=true
+const int @z=3
+var vector<int> @v=make-vec(1 2 3 4)
+var vector<int> @v2=make-vec-zise(7 2)
+}PROGRAM{@v}
 |#

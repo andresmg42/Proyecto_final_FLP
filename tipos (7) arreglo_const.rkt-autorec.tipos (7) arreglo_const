@@ -1066,7 +1066,7 @@
          (val (apply-env-ref env sym))
          )
          
-         (if (reference? (car val)) (list (deref (car val)) (cadr val))
+         (if (reference? val) (deref val)
              val))))
      ;(apply-env-ref env sym)))
     ;env))
@@ -1087,8 +1087,8 @@
                                  (let(
                                       (const (list-ref consts pos))
                                       )
-                                 (if const (list (vector-ref vals pos) const)
-                                 (list (a-ref pos vals) const)
+                                 (if const (vector-ref vals pos) 
+                                 (a-ref pos vals)
                                  ))
                                  (apply-env-ref env sym)))))))
 
@@ -1335,7 +1335,7 @@
 
       (app-exp (rator rands)
                  (let (
-                     (proc (car (eval-expression rator env)))
+                     (proc (eval-expression rator env))
                      (args (eval-rands rands env))
                      
                      )
@@ -1368,7 +1368,7 @@
       ;set
        (set-exp (id rhs-exp)
                 (let(
-                     (val (car (apply-env-ref env id)))
+                     (val (apply-env-ref env id))
                      )
                (begin
                  (if (reference? val)
