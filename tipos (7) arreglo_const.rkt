@@ -157,7 +157,7 @@
                 begin-exp)
     (expression ("set" identifier "=" expression)
                 set-exp)
-    (expression ("LOCALS" "{" (arbno identifier "=" expression) "}" "{"expression (arbno expression) "}") locals-exp)
+    (expression ("LOCALS" "{" (arbno id-exp "=" expression) "}" "{"expression (arbno expression) "}") locals-exp)
 
     
 
@@ -219,6 +219,7 @@
     (type-exp ("(" (separated-list type-exp "*") "->" type-exp ")") proc-type-exp)
     (type-exp ("list" "<" type-exp ">") list-type-exp)
     (type-exp ("vector" "<" type-exp ">") vector-type-exp)
+    (type-exp ("dict<" type-exp "," type-exp ">") dict-type-exp)
     ;(type-exp ("proc") proc-type-exp2)
     ;(type-exp ("const" type-exp) const-type-exp)
     
@@ -254,7 +255,8 @@
 ;Funcion que resuelve las operaciones de cada primitiva unaria
 ;apply-unary-primitive: <primitiva> <list-of-expression> -> numero
 (define apply-unary-primitive
-  (lambda (prim arg)
+  (lambda (prim rands env)
+    (let( (arg (eval-rands rands env)))
     (cases unary-primitive prim
       (primitive-lenght () (string-length (car arg)))
       (primitive-add1 () (+ 1 (car arg)))
@@ -274,22 +276,24 @@
       (primitive-make-vec-zise () (make-vec-zise arg))
       (primitive-ref-vector () (vector-ref (car arg) (cadr arg)))
       (primitive-set-vector () (vector-set! (car arg) (cadr arg) (caddr arg)))
-      (primitive-append-vector () (append (vector->list (car arg)) (cadr arg)))
-      (primitive-delete-vec () (list->vector (eliminar-pos (vector->list (car arg)) (cadr arg) 0)))
+      (primitive-append-vector () (append-vector (car rands) arg env))
+      (primitive-delete-vec () (delete-val-vector (car rands) arg env))
       ;diccionarios
       (primitive-make-dict () (list (car arg) (list->vector (cadr arg))))
       (primitive-dict? () (valor-verdad? (dict? (car arg))))
       (primitive-ref-dict () (dict-values (car arg) (cadr arg)))
       (primitive-set-dict () (set-dict (car arg) (cadr arg) (caddr arg)))
-      (primitive-append-dict () ( append-dict (car arg) (cadr arg) (caddr arg)))
+      (primitive-append-dict () ( append-dict-set (car rands) arg env))
       (primitive-keys-dict () (caar arg))
       (primitive-values-dict () (vector->list (cadr (car arg))))
       
       (else "faltan casos unario")
-      )))
+      ))))
 
 
 
+
+    
 ;---------------------------------------------------------------------TIPOS----------------------------------------------------
 
 ;El Interpretador + checker (FrontEnd + Evaluación + señal para lectura )
@@ -314,7 +318,13 @@
    (name symbol?))
   (proc-type
    (arg-types (list-of type?))
-   (result-type type?)))
+   (result-type type?))
+  (vector-type (t  type?))
+  (list-type (t type?))
+  (dict-type (k type?)
+             (v type?))
+  
+  )
 
 ;***********************************************************************************************************************
 ;***********************************************************************************************************************
@@ -549,8 +559,18 @@
                     )
                  (check-equal-type! id-type exp-type exp)
                  id-type
-                 
                  ))
+      
+      (begin-exp (exp exps)
+                 (let(
+                      (exp-type (type-of-expression exp tenv))
+                      (exp-types (types-of-expressions exps tenv))
+                      )
+                   (if (null? exps) exp-type (last exp-types))
+                   ))
+      
+      (locals-exp (id-exps exps body-exp body-exps)
+                  (type-of-locals-exp id-exps exps body-exp body-exps tenv))
                      
       #|(let-exp (ids rands body)
                (type-of-let-exp ids rands body tenv))|#
@@ -559,6 +579,46 @@
                                       letrec-body tenv)))))|#
       (else 'faltancasos)
       )))
+
+(define type-of-locals-exp
+(lambda(id-exps exps body-exp body-exps tenv)
+ (let(
+     (env (extend-tenv-recursively id-exps exps tenv))
+     )
+   (for-each
+        (lambda (body id)
+          (let*(
+               (texp (cases id-exp id (const-exp (texp name) texp) (identifier-var-exp (texp name) texp) (proc-id-exp (texp name) texp)))
+               (result-type (expand-type-expression texp))
+               
+               )
+            
+              (if (proc? body) 
+              
+              (cases proc body (procedure (texps ids body)
+                                          (let
+                                               (
+                                               (arg-types (expand-type-expressions texps))
+
+                                               )
+                                            (check-equal-type!
+                                            (type-of-expression
+                                             body
+                                            (extend-tenv ids arg-types env))
+                                            result-type body))))
+              
+              
+            (check-equal-type!
+               (type-of-expression body env) result-type body)
+
+              ))) exps id-exps)
+
+         (let(
+              (exp-type (type-of-expression body-exp env))
+              (exp-types (types-of-expressions body-exps env))
+               )
+               (if (null? body-exps) exp-type (last exp-types)))
+   )))
 
 ;check-equal-type!: <type> <type> <expression> -> 
 ; verifica si dos tipos son iguales, muestra un mensaje de error en caso de que no lo sean
@@ -582,7 +642,17 @@
                  (append
                   (arg-types-to-external-form arg-types)
                   '(->)
-                  (list (type-to-external-form result-type)))))))
+                  (list (type-to-external-form result-type))))
+      ;(vector-type (t) (append (list 'vec<) (list (type-to-external-form t)) (list'>)))
+      (vector-type (t) (string->symbol (string-append "vec<"(symbol->string (type-to-external-form t)) ">")))
+      
+      ;(list-type (t) (append (list 'list<) (list (type-to-external-form t)) (list'>)))
+      (list-type (t) (string->symbol (string-append "list<"(symbol->string (type-to-external-form t)) ">")))
+      
+      (dict-type (t1 t2) (string->symbol (string-append "vec<"(symbol->string (type-to-external-form t1)) "," (symbol->string (type-to-external-form t2)) ">")))
+      
+      
+      )))
 
 (define arg-types-to-external-form
   (lambda (types)
@@ -635,25 +705,16 @@
   (lambda (prim rands tenv)
      (let*(
         (arg-types (types-of-expressions rands tenv))
-        (type  (if (not (null? arg-types)) (car arg-types) (eopl:error 'type-of-primitive "types not found"))) 
-        (equal-types? (or ((list-of (lambda(type) (equal? type (car arg-types)))) arg-types) (equal? type list-empty-type)))
+        (typ  (if (not (null? arg-types)) (car arg-types) (type-error arg-types))) 
+        (equal-types? (lambda (args-t) ( (list-of (lambda(t) (equal? t (car args-t)))) args-t) ))
         (validate-type? (lambda (t) (or (equal? t float-type) (equal? t int-type) (equal? t bool-type) (equal? t string-type)))) 
-        ;(len (length arg-types))
-        ;(make-list-types (lambda (type len) (if (equal? len 0) '() (cons type (make-list-types type (- len 1))))))
-        
         
         )
     (cases unary-primitive prim
       (primitive-lenght () (proc-type (list string-type) int-type))
-      ;(primitive-add1 () (proc-type (list int-type) int-type))
-      ;(primitive-sub1 () (proc-type (list int-type) int-type))
+      
       (primitive-neg-boolean () (proc-type (list bool-type) bool-type))
-      ;listas
-      
-      ;(primitive-list? () (proc-type (list list-type) bool-type))
-      ;(primitive-head () (proc-type (list list-type) (let( (head-type (type-of-expression (car rands))) head-type))))
-      
-      
+       
       (primitive-add1 ()
                  (proc-type (list int-type) int-type))
       (primitive-sub1 ()
@@ -663,36 +724,89 @@
                       (proc-type (list int-type) bool-type))
       
       ;listas
-      (primitive-list? () (proc-type (list type) bool-type))
+      (primitive-list? () (proc-type (list typ) bool-type))
 
-      (primitive-head ()  (proc-type (list type) (get-type-list type)))
+      (primitive-head ()  (proc-type (list typ) (cases type typ (list-type (t) t) (else (type-error typ)) )))
       
-      (primitive-tail () (proc-type (list type) type))
+      (primitive-tail () (proc-type (list typ) typ))
       
-      (primitive-make-list () (proc-type (if (and equal-types? (validate-type? type)) arg-types (eopl:error 'type-of-primitive "the list types weren't equals or weren't correct type")) (list-type type)))
+      (primitive-make-list () (proc-type (if (and (equal-types? arg-types) (validate-type? typ)) arg-types (type-error arg-types)) (list-type typ)))
 
-      (primitive-empty () (proc-type (if (list-type? type) (list type) (eopl:error 'type-of-primitive "~s wasn't list-type" type)) bool-type))
+      (primitive-empty () (proc-type (list (cases type typ (vector-type (t) typ) (else (type-error typ)))) bool-type))
 
-      (primitive-append-list () (proc-type (if (and equal-types? (list-type? type)) (list type type) (eopl:error 'type-of-primitive "args-types didn't equals or weren't list-type")) type))
+      (primitive-append-list () (proc-type (if (and equal-types? (cases type typ (list-type (t) #t) (else #f)))
+                                               (list typ typ) (type-error arg-types)) typ))
 
       ;vectores
 
-      (primitive-vector? () (proc-type (list type) bool-type))
+      (primitive-vector? () (proc-type (list typ) bool-type))
 
-      (primitive-make-vec () (proc-type (if (and equal-types? (validate-type? type)) arg-types (eopl:error 'type-of-primitive "the list types weren't equals or weren't correct type")) (vector-type type)))
+      (primitive-make-vec () (proc-type (if (and equal-types? (validate-type? typ)) arg-types (type-error arg-types)) (vector-type typ)) )
 
-     (primitive-make-vec-zise () (proc-type (list int-type (if (validate-type? (cadr arg-types)) (cadr arg-types) (eopl:error "types not supported"))) (vector-type (cadr arg-types))))
+     (primitive-make-vec-zise () (proc-type (list int-type (if (validate-type? (cadr arg-types)) (cadr arg-types) (type-error typ)))
+                                            (vector-type (cadr arg-types))))
 
-     (primitive-ref-vector () (proc-type (list (if (vector-type? type) type (eopl:error 'type-of-primitive "~s wasn't vector-type" type)) int-type) type)) 
+     (primitive-ref-vector () (proc-type (list (cases type typ (vector-type (t) typ) (else (type-error typ))) int-type) typ))
+
+      (primitive-set-vector () (proc-type ( list
+                                            (cases type typ (vector-type (t) typ) (else (type-error typ)))
+                                            int-type
+                                            (cases type typ (vector-type (t) t) (else (type-error typ)))
+                                            )
+                                            typ))
+      (primitive-append-vector() (proc-type (append (cases type typ (vector-type (t) (list typ)) (else (type-error typ)))
+                                                  (if (and (equal-types? (cdr arg-types)) (validate-type? (car (cdr arg-types)))) (cdr arg-types) (type-error (cdr arg-types))))
+                                            typ))
+
+      (primitive-delete-vec () (proc-type (list (cases type typ (vector-type (t) typ) (else (type-error typ))) int-type) typ))
+
+      ;diccionarios
+      
+      (primitive-make-dict () (let(
+                                    (key-type (cases type typ (list-type (t) t) (else (type-error typ))))
+                                    (value-type (cases type (cadr arg-types) (list-type (t) t) (else (type-error typ))))
+                                   )
+                               (proc-type
+                               (list typ (cadr arg-types))
+                               (dict-type key-type value-type)
+                                 )
+                               ))
+      (primitive-dict? () (proc-type (list typ) bool-type))
+
+      (primitive-ref-dict () (let(
+                                  (d-types (cases type typ (dict-type (t1 t2) (list t1 t2)) (else (type-error typ))))
+                                  )
+                               (proc-type (list typ (car d-types)) (cadr d-types))))
+      (primitive-set-dict () (let(
+                                  (d-types (cases type typ (dict-type (t1 t2) (list t1 t2)) (else (type-error typ))))
+                                  )
+                               (proc-type (list typ (car d-types) (cadr d-types)) int-type)))
+                                         
+                                         
+      (primitive-append-dict () (let(
+                                  (d-types (cases type typ (dict-type (t1 t2) (list t1 t2)) (else (type-error typ))))
+                                  )
+                               (proc-type (list typ (list-type (car d-types)) (list-type (cadr d-types))) int-type)))
+      
+      (primitive-keys-dict () (let(                                            
+                                  (d-types (cases type typ (dict-type (t1 t2) (list t1 t2)) (else (type-error typ))))
+                                  )
+                               (proc-type (list typ) (list-type (car d-types)))))
+       (primitive-values-dict () (let(                                            
+                                  (d-types (cases type typ (dict-type (t1 t2) (list t1 t2)) (else (type-error typ))))
+                                  )
+                               (proc-type (list typ) (list-type (cadr d-types)))))
+
+      
+                                            
+      
       
       (else 'faltan_casos)
 
       ))))
 
-
-                                      
-                                      
-  
+ (define type-error
+   (lambda (t) (eopl:error 'type-of-primitive "type-error in ~s" (if (pair? t) (arg-types-to-external-form t) (type-to-external-form t)))))
 
 (define type-of-primitive-bin
   (lambda (prim exp1 exp2 tenv)
@@ -825,18 +939,29 @@
 (define string-type
   (atomic-type 'string))
 
-(define list-empty-type
-  (atomic-type 'empty))
+(define int-list-type
+  (list-type (atomic-type 'int)))
+
+(define float-list-type
+  (list-type (atomic-type 'float)))
+
+(define bool-list-type
+  (list-type (atomic-type 'bool)))
+
+(define string-list-type
+  (list-type (atomic-type 'string)))
 
 
 
 
 
-(define list-type
-  (lambda (typ) (atomic-type (string->symbol (string-append "list<" (symbol->string (cases type typ (atomic-type (t) t) (else (eopl:error 'list-type "no atomic type"))))  ">"  )))))
+
+
+
+#|(define list-type
+  (lambda (typ) (atomic-type (string->symbol (string-append "list<" (symbol->string (cases type typ (atomic-type (t) t) (else (eopl:error 'list-type "no atomic type"))))  ">"  )))))|#
        
-(define vector-type
-  (lambda (typ) (atomic-type (string->symbol (string-append "vector<" (symbol->string (cases type typ (atomic-type (t) t) (else (eopl:error 'list-type "no atomic type"))))  ">"  )))))       
+
 
 
 
@@ -849,10 +974,12 @@
       (String-type-exp () string-type)
       (list-type-exp (ty-e) (list-type (expand-type-expression ty-e)))
       (vector-type-exp (ty-e) (vector-type (expand-type-expression ty-e)))
-      (proc-type-exp (arg-texps result-texp)
+      (dict-type-exp (ty-e1 ty-e2) (dict-type (expand-type-expression ty-e1) (expand-type-expression ty-e2)))
+      (proc-type-exp (arg-texps result-texp) 
                      (proc-type
                       (expand-type-expressions arg-texps)
                       (expand-type-expression result-texp)))
+      
       
       (else 'faltancasos)
       )))
@@ -1267,12 +1394,12 @@
 
 ;funcion que modifica un valor asociado a una clave en un diccionario. retorna el diccionario modificado
 (define set-dict
-  (lambda (dict key value)
+  (lambda (dict key value )
     (let*(
          (pos (list-find-position-string key (car dict)))
          (v (vector-set! (cadr dict) pos value))
          )
-      dict
+      1
       )))
 
 ;funcion que agrega nuevos elementos clave valor a un diccionario. retorna un diccionario con los nuevos elementos agregados
@@ -1291,7 +1418,31 @@
     "los parametros no son los adecuados"
     )))
 
-
+;---falta
+(define append-dict-set
+  (lambda (id-dict args env)
+    (let*(
+    (dict (car args))
+    (keys(cadr args))
+    (values (caddr args))
+    (new-dict (append-dict dict keys values))
+    (id (cases expression id-dict (var-exp (id) id) (else #f)))
+    
+    )
+     (if (symbol? id)
+         (let(
+          (val (apply-env-ref env id ))
+              )
+    (begin
+         (if (reference? val)
+          (setref!
+           val
+           new-dict)
+           (eopl:error 'set-exp "inmutable value ~s" val))
+           1))
+    new-dict
+      )
+    )))
 
 
 ;eval-expression: <expression> <enviroment> -> numero
@@ -1308,9 +1459,8 @@
       (false-exp () #f)
       (empty-list-exp (t) '())
       (empty-vec-exp () (vector))
-      (primapp-un-exp (prim rand)
-                  (let ((arg (eval-rands rand env)))
-                   (apply-unary-primitive prim arg)))
+      (primapp-un-exp (prim rands)
+        (apply-unary-primitive prim rands env))
       
       
       (primapp-bin-exp (exp1 prim exp2)
@@ -1388,7 +1538,7 @@
                               (cdr exps)))))
       ;locals
 
-      #|(locals-exp (names  exps l-body-exp l-body-exps)
+     (locals-exp (names  exps l-body-exp l-body-exps)
                   (let* (
                          (args (eval-rands exps env))
                          (env (extend-env-recursively2 names args env))
@@ -1399,7 +1549,7 @@
                         (loop (eval-expression (car exps) 
                                                env)
                               (cdr exps))))
-                    ))|#
+                    ))
       ;globals
 
        
@@ -1431,45 +1581,57 @@
     (if (equal? zise 0) '()
         (cons bool (make-boolean-list (- zise 1) bool)))))
 
- ;funcion que saca el tipo de los elementos de un tipo lista
-(define get-type-list
-  (lambda (t)
-    (let(
-         (s (cases type t (atomic-type (sym) sym) (else (eopl:error 'get-type-list "given: proc type ,expected: list type"))))
-         )
-      (cond
-        [(equal? s 'list<int>) int-type]
-        [(equal? s 'list<float>) float-type]
-        [(equal? s 'list<bool>) bool-type]
-        [(equal? s 'list<string>) string-type]
-        [else (eopl:error 'get-type-list: "type not supported: ~s" s)]))))
+;funciones auxiliares para los vectores-----------------------------------------------------------------------------------
 
-;funcion que comprueba si un type es de la forma list<type>       
-(define list-type?
-  (lambda (t)
-    (cases type t (atomic-type (ty) (or
-                                      (equal? ty 'list<int>)
-                                      (equal? ty 'list<float>)
-                                      (equal? ty 'list<bool>)
-                                      (equal? ty 'list<String>)))
-      (else (eopl:error 'type-of-primitive "~s wasn't atomic type" t))
+;funcion que agrega elementos a un vector y  lo setea en el ambiente
+(define append-vector
+  (lambda (id-vec args env)
+    (let*(
+    (new-vec (list->vector (append (vector->list (car args)) (cdr args))))
+    (id (cases expression id-vec (var-exp (id) id) (else #f)))
+    
+    )
+     (if (symbol? id)
+         (let(
+          (val (apply-env-ref env id ))
+              )
+    (begin
+         (if (reference? val)
+          (setref!
+           val
+           new-vec)
+           (eopl:error 'set-exp "inmutable value ~s" val))
+           1))
+    new-vec
       )
+    )))
 
-    ))
+;funcion que elimina elementos de un vector, y lo setea 
+(define delete-val-vector
+  (lambda (id-vec args env)
+    (let*(
+    (new-vec (list->vector (eliminar-pos (vector->list (car args)) (cadr args) 0)))
+    (id (cases expression id-vec (var-exp (id) id) (else #f)))
+    
+    )
+     (if (symbol? id)
+         (let(
+          (val (apply-env-ref env id ))
+              )
+    (begin
+         (if (reference? val)
+          (setref!
+           val
+           new-vec)
+           (eopl:error 'set-exp "inmutable value ~s" val))
+           1))
+    new-vec
+      )
+    )))
+
+
        
-; funcion que valida si un type des de typo vector<type>       
-(define vector-type?
-  (lambda (t)
-    (cases type t (atomic-type (ty) (or
-                                      (equal? ty 'vector<int>)
-                                      (equal? ty 'vector<float>)
-                                      (equal? ty 'vector<bool>)
-                                      (equal? ty 'vector<String>)))
-      (else (eopl:error 'type-of-primitive "~s wasn't atomic type" t))
-      )
-
-    ))
-            
+           
 ;-----------------------------------------------------------------------------------------------
 
 
@@ -1557,4 +1719,71 @@ const int @z=3
 var vector<int> @v=make-vec(1 2 3 4)
 var vector<int> @v2=make-vec-zise(7 2)
 }PROGRAM{@v}
+
+GLOBALS{
+var int @x=5
+proc (int->int) @p= function(int @x)  return Si /@x == 0/ {1} sino {/@x * app(@p /@x ~ 1/)/}
+var String @s="hola_"
+var list<int> @list= make-list(1 2 3)
+var bool @b=true
+const int @z=3
+var vector<int> @v=make-vec(1 2 3 4)
+var vector<int> @v2=make-vec-zise(7 2)
+
+var list<String> @empty= make-list((String))
+}PROGRAM{append-list(@list @empty)}
+
+ GLOBALS{
+var int @x=5
+proc (int->int) @p= function(int @x)  return Si /@x == 0/ {1} sino {/@x * app(@p /@x ~ 1/)/}
+var String @s="hola_"
+var list<int> @list= make-list(1 2 3)
+var bool @b=true
+const int @z=3
+var vector<int> @v=make-vec(1 2 3 4)
+var vector<int> @v2=make-vec-zise(7 2)
+var list<int> @l2= make-list(4 5 6)
+var list<String> @empty= make-list((String))
+}PROGRAM{append-list(@list @l2)}
+
+ GLOBALS{
+var int @x=5
+proc (int->int) @p= function(int @x)  return Si /@x == 0/ {1} sino {/@x * app(@p /@x ~ 1/)/}
+var String @s="hola_"
+var list<int> @list= make-list(1 2 3)
+var bool @b=true
+const int @z=3
+var vector<int> @v=make-vec(1 2 3 4)
+var vector<int> @v2=make-vec-zise(7 2)
+var list<int> @l2= make-list(4 5 6)
+var list<String> @empty= make-list((String))
+var dict<String,int> @d= make-dict(make-list( "andre" "ort") make-list( 1 2 ))
+}PROGRAM{BLOCK{
+set-dict(@d "andre" 0)
+@d}}
+
+GLOBALS{}
+PROGRAM{
+LOCALS{
+var int @x=5
+proc (int->int) @p= function(int @x)  return Si /@x == 0/ {1} sino {/@x * app(@p /@x ~ 1/)/}
+var String @s="hola_"
+var list<int> @list= make-list(1 2 3)
+var bool @b=true
+const int @z=3
+var vector<int> @v=make-vec(1 2 3 4)
+var vector<int> @v2=make-vec-zise(7 2)
+var list<int> @l2= make-list(4 5 6)
+var list<String> @empty= make-list((String))
+var dict<String,int> @d= make-dict(make-list( "andre" "ort") make-list( 1 2 ))
+}
+{
+dict-keys(@d)
+}
+
+
+
+
+
 |#
+
