@@ -107,6 +107,8 @@
    ; (expression ("const" type-exp identifier "=" expression ) conts-exp)
     
     (expression (unary-primitive "(" (arbno expression) ")") primapp-un-exp)
+
+    ;(expression (expression "." g-primitive "(" (arbno expression) ")") app-graph-exp) 
     
     (expression
      ( "{" expression primitiva-binaria expression "}")
@@ -151,11 +153,11 @@
 
     (expression ("[]") empty-vec-exp)
     
-    (expression ( "edges" "(" (arbno "(" identifier "," identifier ")" ) ")") edge-exp)
+    ;(expression ( "edges" "(" (arbno "(" identifier "," identifier ")" ) ")") edge-exp)
 
-    (expression ( "vertex" "(" (separated-list identifier ",") ")") vertices-exp)
+    ;(expression ( "vertex" "(" (separated-list identifier ",") ")") vertices-exp)
 
-    (expression ( "graph" "(" expression "," expression ")" ";") graph-exp)
+    ;(expression ( "graph" "(" expression "," expression ")" ";") graph-exp)
 
      ; características adicionales locals
     (expression ("BLOCK" "{" expression (arbno  expression) "}")
@@ -169,8 +171,7 @@
 
    (expression ("while" expression "do" expression "done") while-exp)
 
-    ;(expression
-      ; ("for" identificador "=" expression "to" expression "do" expression "done") for-exp)
+   
     
     
     ; binary-Primitive-exp
@@ -215,7 +216,21 @@
     (unary-primitive ("append-dict") primitive-append-dict)
     (unary-primitive ("keys-dict") primitive-keys-dict)
     (unary-primitive ("values-dict") primitive-values-dict)
-    
+
+    ;;grafos
+
+    (unary-primitive ("graph") primitive-graph)
+    (unary-primitive ("vertex") primitive-vertex)
+    (unary-primitive ("edges") primitive-edges)
+    (unary-primitive ("edge") primitive-edge)
+    (unary-primitive ("get-edges") primitive-get-edges)
+    (unary-primitive ("get-vertex") primitive-get-vertex)
+    (unary-primitive ("add-edge") primitive-add-edge)
+    (unary-primitive ("in-neighbors") primitive-vecinos-entrantes)
+    (unary-primitive ("out-neighbors") primitive-vecinos-salientes)
+    ;graph-primitve
+
+    ;(g-primitive ("get-edges") primitive-get-edges)
     
 
     ;caracteristicas adicionales
@@ -230,8 +245,14 @@
     (type-exp ("vector" "<" type-exp ">") vector-type-exp)
     (type-exp ("dict<" type-exp "," type-exp ">") dict-type-exp)
     (type-exp ("None-type") none-type-exp)
-    ;(type-exp ("proc") proc-type-exp2)
-    ;(type-exp ("const" type-exp) const-type-exp)
+    ;(type-exp ("grap<" type-exp","type-exp">") graph-type-exp)
+    ;(type-exp ("vertex<"type-exp">") vertex-type-exp)
+    ;(type-exp ("edges<"type-exp">") edges-type-exp)
+    ;(type-exp ("edge<"type-exp","type-exp) edge-type-exp)
+    (type-exp ("graph") graph-type-exp)
+    (type-exp ("vertex") vertex-type-exp)
+    (type-exp ("edges") edges-type-exp)
+    (type-exp ("edge") edge-type-exp)
     
     
     ))
@@ -296,12 +317,210 @@
       (primitive-append-dict () ( append-dict-set (car rands) arg env))
       (primitive-keys-dict () (caar arg))
       (primitive-values-dict () (vector->list (cadr (car arg))))
+      ;grafos
+      (primitive-graph () (graph-exp (car arg) (cadr arg)))
+      (primitive-vertex () (vertices-exp (map string->symbol arg)))
+      (primitive-edges () (edges-exp arg))
+      (primitive-edge () (edge-exp (string->symbol  (car arg)) (string->symbol (cadr arg))))
+      
+      (primitive-get-edges () (cases g-exp (car arg) (graph-exp (v e) e)))
+
+      (primitive-get-vertex () (cases g-exp (car arg) (graph-exp (v e) v)))
+
+      (primitive-add-edge () (add-edge (car arg) (cadr arg)))
+
+      (primitive-vecinos-entrantes () (map symbol->string (vecinos-entrantes (car arg) (string->symbol (cadr arg)))))
+
+      (primitive-vecinos-salientes () (map symbol->string (vecinos-salientes (car arg) (string->symbol (cadr arg)))))
       
       (else "faltan casos unario")
       ))))
 
 
+;funciones de grafos--------------------------------------------------------
 
+;ADD-EDGE
+ ;;add-edges-dtype:g-exp x List-> g-exp
+;;usage: (add-edges-dtype grafo e)= resive un g-exp y una arista en forma de lista y si la arista no esta en las aristas del grafo entonces la funcion
+;;crea un nuevo grafo con la arista insertada en el.
+(define add-edge
+  (lambda (grafo e)
+    (let*(
+          ;(ed-ex (edge-exp (car e) (cadr e)))
+          (ed-ex e)
+          (vertices-expresion (cases g-exp grafo (graph-exp (v e) v)))
+          (edges-expresion (cases g-exp grafo (graph-exp (v e) e)))
+          (edges-list (cases es-exp edges-expresion ( edges-exp (l) l)))
+          (new-edge-list (if (not (is-in-edges? edges-list ed-ex))
+                             (insertar-edge ed-ex edges-list)
+                             edges-list
+                             )
+                         )
+          (new-graph (graph-exp vertices-expresion (edges-exp new-edge-list)))
+          
+          )new-graph
+      )
+    )
+  )
+
+;;funcion auxiliar
+;;is-in-edges?:List x e-exp ->Bool
+;;usage:(is-in-edges? edges edge )= resive una lista de e-exp y un e-exp y verifica que ese e-exp este en la lista, si esta retorna true
+;;de lo contrario retorna falso. Se usa para verificar que la arista en la funcion add-edge no este dentro de la lista de e-exp del grafo de tipo g-exp.
+;;<List> ::= ()
+;;::= (<Bool> <List>)
+
+(define is-in-edges?
+  (lambda (edges edge)
+    (if(null? edges)
+       #f
+       (let(
+             (a (cases e-exp edge (edge-exp (a b) a)))
+             (b (cases e-exp edge (edge-exp (a b) b)))
+             (c (cases e-exp (car edges) (edge-exp (c d) c)))
+             (d (cases e-exp (car edges) (edge-exp (c d) d)))
+             
+             
+           )(or (and (eqv? a c) (eqv? b d))
+             (is-in-edges? (cdr edges) edge))
+
+
+             ))
+      
+      )
+)
+
+;;funcion auxiliar
+
+;;insertar-edge: List x e-exp ->List
+;;usage: (isertar-edge edge edges)= resive  una arista de tipo e-exp y una lista de aristas de tipo e-exp e inserta la arista al final de esta lista. Se usa en la funcion add-edge
+;;para insertar la arista .
+;;<List> ::= ()
+;;::= (<e-exp> <List>)
+
+(define insertar-edge
+  (lambda(edge edges)
+    (if (null? edges)
+        (list edge)
+        (cons (car edges) (insertar-edge edge (cdr edges)))
+        )
+    )
+  )
+
+;VESINOS-ENTRANTES
+
+;;vecinos-entrantes:g-exp x List->g-exp
+;;usage:(vecinos-entrantes grafo a) = resive un grafo de tipo g-exp y un vertice. retorna una lista con los nodos desde los cuales se pueden llegar al nodo dado.
+
+;;funcion auxiliar
+
+;;buscar-lp: List x symbol ->List
+;;usage: (buscar-lp a list-edges) = busca los nodos desde los cuales se puede llegar al nodo a.
+;;<List> ::= ()
+;;::= (<symbol> <List>)
+
+(define vecinos-entrantes
+  (lambda (grafo a )
+    (cases g-exp grafo
+      (graph-exp (v e)
+                 (letrec(
+
+                         (list-edges (cases es-exp e (edges-exp (l) l)))
+                         (buscar-lp
+                          (lambda (a lp)
+                            (if (null? lp)
+                                empty
+                                (let*(
+                                    (x (cases e-exp (car lp) (edge-exp (a b) a)))
+                                    (y (cases e-exp (car lp) (edge-exp (a b) b)))
+                                    (respuesta (if (eqv? a y) 
+                                    (cons x (buscar-lp a (cdr lp)))
+                                    (buscar-lp a (cdr lp))
+
+                                    ))
+                                    )
+                                  respuesta
+                                  )
+                                )
+                            )
+                          )
+                         )
+                   (buscar-lp a list-edges)
+                   )
+                 )
+      )
+    )
+  )
+
+;;vecinos-salientes:g-exp x List->g-exp
+;;usage:(vecinos-salientes grafo a) = resive un grafo de tipo g-exp y un vertice. retorna una lista con los nodos  a los cuales
+;;se puede llegar desde el nodo dado.
+
+;;funcion auxiliar
+
+;;buscar-lp: List x symbol ->List
+;;usage: (buscar-lp a list-edges) = busca los nodos a los cuales se puede llegar desde el nodo a.
+;;<List> ::= ()
+;;::= (<symbol> <List>)
+
+(define vecinos-salientes
+  (lambda (grafo a )
+    (cases g-exp grafo
+      (graph-exp (v e)
+                 (letrec(
+
+                         (list-edges (cases es-exp e (edges-exp (l) l)))
+                         (buscar-lp
+                          (lambda (a lp)
+                            (if (null? lp)
+                                empty
+                                (let*(
+                                    (x (cases e-exp (car lp) (edge-exp (a b) a)))
+                                    (y (cases e-exp (car lp) (edge-exp (a b) b)))
+                                    (respuesta (if (eqv? a x) 
+                                    (cons y (buscar-lp a (cdr lp)))
+                                    (buscar-lp a (cdr lp))
+
+                                    ))
+                                    )
+                                  respuesta
+                                  )
+                                )
+                            )
+                          )
+                         )
+                   (buscar-lp a list-edges)
+                   )
+                 )
+      )
+    )
+  )
+
+;d-types grafos--------------------------------------------------------------
+
+(define-datatype g-exp g-exp?
+ (graph-exp (v vs-exp?)
+        (g es-exp?)
+        
+        )
+                
+  )
+                
+(define-datatype vs-exp vs-exp?
+  (vertices-exp (vsy (list-of symbol?)))
+  )
+
+
+(define-datatype es-exp es-exp?
+  (edges-exp (e (list-of e-exp?)))
+ )
+
+
+(define-datatype e-exp e-exp?
+  (edge-exp (sym-left symbol?)
+            (sym-right symbol?)
+            )
+  )
 
     
 ;---------------------------------------------------------------------TIPOS----------------------------------------------------
@@ -333,6 +552,17 @@
   (list-type (t type?))
   (dict-type (k type?)
              (v type?))
+  #|(graph-type (vertice  type?)
+              (edges type?))
+  
+  (vertex-type (t type?))
+  
+  (edges-type (edge-type type?))
+
+  (edge-type (t1 type?)
+             (t2 type?))|#
+  
+       
   
   )
 
@@ -542,6 +772,8 @@
                    (type-of-expression body tenv)
                    none-type))
       (switch-exp (test cases bodies default) (type-of-switch test cases bodies default tenv))
+
+      
                      
                  
                
@@ -632,6 +864,16 @@
       (list-type (t) (string->symbol (string-append "list<"(symbol->string (type-to-external-form t)) ">")))
       
       (dict-type (t1 t2) (string->symbol (string-append "vec<"(symbol->string (type-to-external-form t1)) "," (symbol->string (type-to-external-form t2)) ">")))
+
+      ;(graph-type (v e) (string->symbol (string-append "graph<"(symbol->string (type-to-external-form v)) "," (symbol->string (type-to-external-form e)) ">")))
+
+      ;(vertex-type (t) (string->symbol (string-append "vertex<"(symbol->string (type-to-external-form t)) ">")))
+
+      ;(edges-type (t) (string->symbol (string-append "edges<"(symbol->string (type-to-external-form t)) ">")))
+
+      ;(edge-type (t1 t2) (string->symbol (string-append "edge<"(symbol->string (type-to-external-form t1)) "," (symbol->string (type-to-external-form t2)) ">")))
+
+                  
       
       
       )))
@@ -778,6 +1020,46 @@
                                   (d-types (cases type typ (dict-type (t1 t2) (list t1 t2)) (else (type-error typ))))
                                   )
                                (proc-type (list typ) (list-type (cadr d-types)))))
+      
+      #|(primitive-graph() (let*(
+                                         (v-type (cases type typ (vertex-type (t) t) (esle (type-error typ))))
+                                         (es-type (cases type (cadr arg-types) (edges-type (t) t) (else (type-error typ))))
+                                         (e-types (cases type es-type (edge-type (t1 t2) (list t2 t2)) (else (type-error typ))))
+
+                                         )
+                                      (
+                                      (if (equal-types? (list v-type (car e-types)))
+                                                
+                                          (proc-type arg-types (graph-type v-type es-type))
+                                          (type-error arg-types)))))
+
+      (primitive-vertex () (proc-type (if (and (equal-types? arg-types) (validate-type? typ)) arg-types (type-error arg-types)) (vertex-type typ)))
+
+      (primitive-edges () (cases type (car arg-types) (edge-type (t1 t2) (proc-type arg-types (edges-type (car arg-types)))) (else (type-error arg-types))))
+
+      (primitive-edge () (proc-type (if (and (equal-types? arg-types) (validate-type? typ)) arg-types (type-error arg-types)) (edge-type typ (cadr arg-types))))|#
+
+      (primitive-graph() (proc-type  (list vertex-type edges-type) graph-type))
+      
+      (primitive-vertex () (proc-type (if (and (equal? typ string-type) (equal-types? arg-types)) arg-types (type-error arg-types)) vertex-type))
+
+      (primitive-edges () (proc-type (if (and (equal? typ edge-type) (equal-types? arg-types)) arg-types (type-error arg-types)) edges-type))
+
+      (primitive-edge () (proc-type (if (and (equal? typ string-type) (equal-types? arg-types) (equal? (length arg-types) 2)) arg-types (type-error arg-types)) edge-type))
+
+      (primitive-get-edges () (proc-type (list graph-type) edges-type))
+
+      (primitive-get-vertex () (proc-type (list graph-type) vertex-type))
+
+      (primitive-add-edge () (proc-type (list graph-type edge-type) graph-type))
+
+      (primitive-vecinos-entrantes () (proc-type (list graph-type string-type) (list-type string-type)))
+
+      (primitive-vecinos-salientes () (proc-type (list graph-type string-type) (list-type string-type)))
+
+      
+                                      
+                                      
 
       
                                             
@@ -936,6 +1218,18 @@
 (define none-type
   (atomic-type 'None-type))
 
+(define graph-type
+  (atomic-type 'graph))
+
+(define vertex-type
+  (atomic-type 'vertex))
+
+(define edges-type
+  (atomic-type 'edges))
+
+(define edge-type
+  (atomic-type 'edge))
+
 
 
 
@@ -961,6 +1255,16 @@
       (vector-type-exp (ty-e) (vector-type (expand-type-expression ty-e)))
       (dict-type-exp (ty-e1 ty-e2) (dict-type (expand-type-expression ty-e1) (expand-type-expression ty-e2)))
       (none-type-exp () none-type)
+      ;(graph-type-exp (t-v t-e) (graph-type (expand-type-expression t-v) (expand-type-expression t-e)))
+      ;(vertex-type-exp (t) (vertex-type (expand-type-expression t)))
+      ;(edges-type-exp (t) (edges-type (expand-type-expression t)))
+      ;(edge-type-exp (t1 t2) (edge-type (expand-type-expression t1) (expand-type-expression t2)))
+      (graph-type-exp () graph-type)
+      (vertex-type-exp () vertex-type)
+      (edges-type-exp () edges-type)
+      (edge-type-exp () edge-type)
+      
+      
       (proc-type-exp (arg-texps result-texp) 
                      (proc-type
                       (expand-type-expressions arg-texps)
@@ -1453,7 +1757,7 @@
       (empty-vec-exp () (vector))
       (print-exp (ex) (begin (display (eval-expression ex env)) (newline)))
       (primapp-un-exp (prim rands)
-        (apply-unary-primitive prim rands env))
+        (apply-unary-primitive prim rands env));app prim
       
       
       (primapp-bin-exp (exp1 prim exp2)
@@ -1848,8 +2152,77 @@ var dict<String,int> @d= make-dict(make-list( "andre" "ort") make-list( 1 2 ))
 proc (int->None-type) @for=function(int @i) for @k in range(@i,10,1) do print(@k) done
 proc (int->None-type) @while=function (int @i) while {@i>0} do BLOCK{print(@i) set @i={@i~1}} done
 proc (int->None-type) @while2= function (int @i) while {@i>0} do BLOCK { set @z={@z+2} set @i={@i~1}} done
-proc (int->int) @switch = function (int @x) switch (@x){ case 0: 2; case "hola":4 ; default : 0}
-}{ app(@switch @x)}}
+proc (int->int) @switch = function (int @x) switch (@x){ case 0: 2; case 5:4 ; default : 0}
+var vertex<String> @vertex= vertex("a" "b" "c" "d")
+}{@vertex}}
 
+GLOBALS{var int @z=10}
+PROGRAM{
+LOCALS{
+var int @x=5
+proc (int->int) @p= function(int @x) if {@x == 0} 1 else {@x * app(@p {@x ~ 1})}
+var String @s="hola_"
+var list<int> @list= make-list(1 2 3)
+var bool @b=true
+const int @w=3
+var vector<int> @v=make-vec(1 2 3 4)
+var vector<int> @v2=make-vec-zise(7 2)
+var list<int> @l2= make-list(4 5 6)
+var list<String> @empty= make-list((String))
+var dict<String,int> @d= make-dict(make-list( "andre" "ort") make-list( 1 2 ))
+proc (int->None-type) @for=function(int @i) for @k in range(@i,10,1) do print(@k) done
+proc (int->None-type) @while=function (int @i) while {@i>0} do BLOCK{print(@i) set @i={@i~1}} done
+proc (int->None-type) @while2= function (int @i) while {@i>0} do BLOCK { set @z={@z+2} set @i={@i~1}} done
+proc (int->int) @switch = function (int @x) switch (@x){ case 0: 2; case 5:4 ; default : 0}
+var vertex @vertex= vertex("a" "b" "c" "d")
+var edges @edges= edges(edge("a" "b") edge("c" "d"))
+}{
+get-edges(graph(@vertex @edges))}}
+
+
+GLOBALS{var int @z=10 var vertex @vertex= vertex("a" "b" "c" "d")
+var edges @edges= edges(edge("a" "b") edge("c" "d"))}
+PROGRAM{
+LOCALS{
+var int @x=5
+proc (int->int) @p= function(int @x) if {@x == 0} 1 else {@x * app(@p {@x ~ 1})}
+var String @s="hola_"
+var list<int> @list= make-list(1 2 3)
+var bool @b=true
+const int @w=3
+var vector<int> @v=make-vec(1 2 3 4)
+var vector<int> @v2=make-vec-zise(7 2)
+var list<int> @l2= make-list(4 5 6)
+var list<String> @empty= make-list((String))
+var dict<String,int> @d= make-dict(make-list( "andre" "ort") make-list( 1 2 ))
+proc (int->None-type) @for=function(int @i) for @k in range(@i,10,1) do print(@k) done
+proc (int->None-type) @while=function (int @i) while {@i>0} do BLOCK{print(@i) set @i={@i~1}} done
+proc (int->None-type) @while2= function (int @i) while {@i>0} do BLOCK { set @z={@z+2} set @i={@i~1}} done
+proc (int->int) @switch = function (int @x) switch (@x){ case 0: 2; case 5:4 ; default : 0}
+var graph @g=graph(@vertex @edges)
+}{ in-neighbors(@g "a")}}
+
+()
+--> GLOBALS{var int @z=10 var vertex @vertex= vertex("a" "b" "c" "d")
+var edges @edges= edges(edge("a" "b") edge("c" "d"))}
+PROGRAM{
+LOCALS{
+var int @x=5
+proc (int->int) @p= function(int @x) if {@x == 0} 1 else {@x * app(@p {@x ~ 1})}
+var String @s="hola_"
+var list<int> @list= make-list(1 2 3)
+var bool @b=true
+const int @w=3
+var vector<int> @v=make-vec(1 2 3 4)
+var vector<int> @v2=make-vec-zise(7 2)
+var list<int> @l2= make-list(4 5 6)
+var list<String> @empty= make-list((String))
+var dict<String,int> @d= make-dict(make-list( "andre" "ort") make-list( 1 2 ))
+proc (int->None-type) @for=function(int @i) for @k in range(@i,10,1) do print(@k) done
+proc (int->None-type) @while=function (int @i) while {@i>0} do BLOCK{print(@i) set @i={@i~1}} done
+proc (int->None-type) @while2= function (int @i) while {@i>0} do BLOCK { set @z={@z+2} set @i={@i~1}} done
+proc (int->int) @switch = function (int @x) switch (@x){ case 0: 2; case 5:4 ; default : 0}
+var graph @g=graph(@vertex @edges)
+}{ in-neighbors(@g "b")}}
 |#
 
