@@ -1,0 +1,2762 @@
+#lang eopl
+(require racket/format)
+(require racket/list)
+
+;******************************************************************************************
+;Andres David Ortega Arteaga 2241885
+;Jose Daniel Trujillo Suarez 2225611
+
+;;;;; Interpretador para lenguaje con condicionales y ligadura local
+
+;; La definición BNF para las expresiones del lenguaje:
+;;
+;;  <program>       ::= <expression>
+;;                      <a-program (exp)>
+
+;;  <expression>    ::= <numero>
+;;                      <lit-exp (num)>
+
+;;                  ::= <texto>
+;;                      <lit-text (txt)>
+
+;;                  ::= <identifier>
+;;                      <var-exp (id)>
+
+;;                  ::= (<expression> <binary-primitive> <expression>)
+;;                      primapp-bin-exp(exp1 binary-prim exp2)
+
+;;                  ::= <primitive-unary>(<expression>)
+;;                      primapp-un-exp(unary-prim exp)
+
+;;                  ::= Si <expresion> "{" <expresion>  "}" "sino" "{" <expresion> "
+;;                      if-exp (test-exp true-exp false-exp)
+
+;;                  ::= declarar ({<identificador> = <expresion> ';' }*)) { <expresion> }
+
+;;                  ::= procedure (<identificador>*(',') ) "{" <expresion> "}"
+;;                      procedure-exp (ids cuero)
+
+;;                  ::= "eval" expresion (expresion *(",") )  finalEval
+;;                      app-exp
+
+;;                  ::= letrec  {identifier ({identifier}*(,)) = <expression>}* in <expression>
+;;                     <letrec-exp proc-names idss bodies bodyletrec>
+
+;; <binary-primitive>  ::= + (primitive-sum)
+;;                     ::= ~ (primitive-substract)
+;;                     ::= / (primitive-div)
+;;                     ::= * (primitive-mult)
+;;                     ::= concat (primitive-con)
+;;                     ::= > (primitive-greater)
+;;                     ::= < (primitive-minor)
+;;                     ::= >= (primitive-greater-equal)
+;;                     ::= <= (primitive-minor-equal)
+;;                     ::= != (primitive-diferent)
+;;                     ::= == (primitive-comparator-equal)
+
+;; <unary-primitive>   ::= lenght (primitive-lenght)
+;;                     ::= add1 (primitive-add1)
+;;                     ::= sub1 (primirtive-sub1)
+;;                     ::= neg (primitive-neg-boolean)
+
+;******************************************************************************************
+
+;******************************************************************************************
+
+
+;Especificación Léxica
+(define scanner-spec-simple-interpreter
+'((white-sp
+   (whitespace) skip)
+  (comment
+   ("$" (arbno (not #\newline))) skip)
+  (identifier
+   ("@" letter (arbno (or letter digit "?"))) symbol)
+  (entero
+   (digit (arbno digit)) number)
+  (entero
+   ("-" digit (arbno digit)) number)
+  (flotante
+   (digit (arbno digit) "." digit (arbno digit)) number)
+  (flotante
+   ("-" digit (arbno digit) "." digit (arbno digit)) number)
+  (text
+    (letter (arbno (or letter digit "_" "#" ":"))) string)
+
+  ))
+
+;Especificación Sintáctica (gramática)
+(define grammar-simple-interpreter
+  '(
+    (fusion-lang ("GLOBALS" "{" (arbno id-exp "=" expression) "}" "PROGRAM" "{" expression "}") fusion-exp)
+    (id-exp ("const" type-exp identifier) const-exp)
+    (id-exp ("var" type-exp identifier) identifier-var-exp)
+    (id-exp ("proc" type-exp identifier) proc-id-exp)
+    (expression (id-exp) var-id-exp)
+    (expression ("main""("")" "{" expression "}") main-exp)
+    (expression ("print" "(" expression ")") print-exp)
+    (expression (entero) lit-ent-exp)
+    (expression (flotante) lit-float-exp)
+    (expression (identifier) var-exp)
+    (expression ("true") true-exp)
+    (expression ("false") false-exp)
+    (expression (unary-primitive "(" (arbno expression) ")") primapp-un-exp)
+    (expression
+    ( "{" expression primitiva-binaria expression "}")
+     primapp-bin-exp)
+    (expression
+     ("\"" text "\"" )
+    text-exp)
+    (expression
+    ("if" expression "then" expression  "else"  expression )
+     if-exp)
+    (expression ("switch" "(" expression ")" "{"
+                         (arbno "case" expression ":" expression ";")
+                         "default" ":"  expression  "}") switch-exp)
+    (expression
+     ("function" "(" (arbno type-exp identifier) ")" 
+                   "{" expression"}" )
+     function-exp)
+    (expression ( "app""(" expression (arbno expression) ")")
+                app-exp)
+    (expression ("("type-exp")") empty-list-exp)
+    (expression ("["type-exp"]") empty-vec-exp)
+
+     ; características adicionales locals
+    (expression ("BLOCK" "{" expression (arbno  expression) "}")
+                begin-exp)
+    
+    (expression ("set" identifier "=" expression)
+                set-exp)
+    
+    (expression ("LOCALS" "{" (arbno id-exp "=" expression) "}" "{"expression (arbno expression) "}") locals-exp)
+
+    ;ciclos
+   (expression ("for" identifier "in" "range" "(" expression "," expression "," expression ")" "do" expression "done") for-exp)
+
+   (expression ("while" expression "do" expression "done") while-exp)
+
+   
+    
+    
+    ; binary-Primitive-exp
+    (primitiva-binaria ("+") primitiva-suma)
+    (primitiva-binaria ("~") primitiva-resta)
+    (primitiva-binaria ("/") primitiva-div)
+    (primitiva-binaria ("*") primitiva-multi)
+    (primitiva-binaria ("concat") primitiva-concat)
+    (primitiva-binaria (">") primitiva-mayor)
+    (primitiva-binaria ("<") primitiva-menor)
+    (primitiva-binaria (">=") primitiva-mayor-igual)
+    (primitiva-binaria ("<=") primitiva-menor-igual)
+    (primitiva-binaria ("!=") primitiva-diferente)
+    (primitiva-binaria ("==") primitiva-comparador-igual)
+    (primitiva-binaria ("%") primitiva-modulo)
+
+    
+    ;unary-primitive-exp
+    (unary-primitive ("length") primitive-lenght);operacion unaria para calcula longitud de un string
+    (unary-primitive ("add1") primitive-add1);operacion unaria hallar el sucesor de un numero
+    (unary-primitive ("sub1") primitive-sub1);operacion unaria hallar el predecesor de un numero
+    (unary-primitive ("neg") primitive-neg-boolean);operacion que niega el valor de un booleano
+    ;;listas
+    (unary-primitive("empty?") primitive-empty)
+    (unary-primitive("list?") primitive-list?)
+    (unary-primitive("head") primitive-head)
+    (unary-primitive("tail")primitive-tail)
+    (unary-primitive ("make-list") primitive-make-list)
+    (unary-primitive ("append-list") primitive-append-list)
+    ;;vectores
+    (unary-primitive("vector?") primitive-vector?)
+    (unary-primitive ("make-vec") primitive-make-vec)
+    (unary-primitive ("make-vec-zise") primitive-make-vec-zise)
+    (unary-primitive ("ref-vector") primitive-ref-vector)
+    (unary-primitive ("set-vector") primitive-set-vector)
+    (unary-primitive ("append-vector") primitive-append-vector)
+    (unary-primitive ("delete-val-vector") primitive-delete-vec)
+ 
+    ;;diccionario
+    (unary-primitive ("make-dict") primitive-make-dict)
+    (unary-primitive ("dict?") primitive-dict?)
+    (unary-primitive ("ref-dict") primitive-ref-dict)
+    (unary-primitive ("set-dict") primitive-set-dict)
+    (unary-primitive ("append-dict") primitive-append-dict)
+    (unary-primitive ("keys-dict") primitive-keys-dict)
+    (unary-primitive ("values-dict") primitive-values-dict)
+
+    ;;grafos
+
+    (unary-primitive ("graph") primitive-graph)
+    (unary-primitive ("vertex") primitive-vertex)
+    (unary-primitive ("edges") primitive-edges)
+    (unary-primitive ("edge") primitive-edge)
+    (unary-primitive ("get-edges") primitive-get-edges)
+    (unary-primitive ("get-vertex") primitive-get-vertex)
+    (unary-primitive ("add-edge") primitive-add-edge)
+    (unary-primitive ("in-neighbors") primitive-vecinos-entrantes)
+    (unary-primitive ("out-neighbors") primitive-vecinos-salientes)
+    (unary-primitive ("zero?") zero-test-prim)    
+    (type-exp ("int") int-type-exp)
+    (type-exp ("float") float-type-exp)
+    (type-exp ("String") String-type-exp)
+    (type-exp ("bool") bool-type-exp)
+    (type-exp ("(" (separated-list type-exp "*") "->" type-exp ")") proc-type-exp)
+    (type-exp ("list" "<" type-exp ">") list-type-exp)
+    (type-exp ("vector" "<" type-exp ">") vector-type-exp)
+    (type-exp ("dict<" type-exp "," type-exp ">") dict-type-exp)
+    (type-exp ("None-type") none-type-exp)
+    (type-exp ("graph") graph-type-exp)
+    (type-exp ("vertex") vertex-type-exp)
+    (type-exp ("edges") edges-type-exp)
+    (type-exp ("edge") edge-type-exp)
+    
+    
+    ))
+
+;Funcion que resuelve las operaciones de cada primitiva binaria 
+;apply-binary-primitive: <primitiva> <list-of-expression> -> numero
+;apply-primitive: <primitiva> <list-of-expression> -> numero
+
+(define apply-primitive-bin
+  (lambda (prim-bin args)
+    (cases primitiva-binaria prim-bin
+      (primitiva-suma () (+ (car args) (cadr args)))
+      (primitiva-resta () (- (car args) (cadr args)))
+      (primitiva-div () (/ (car args) (cadr args)))
+      (primitiva-multi () (* (car args) (cadr args)))
+      (primitiva-concat () (string-append (car args) (cadr args)))
+      (primitiva-mayor () (valor-verdad? (comparar (car args) (cadr args) '>)))
+      (primitiva-menor () (valor-verdad? (comparar (car args) (cadr args) '<)))
+      (primitiva-mayor-igual () (valor-verdad? (comparar (car args) (cadr args) '>=)))
+      (primitiva-menor-igual () (valor-verdad? (comparar (car args) (cadr args) '<=)))
+      (primitiva-diferente () (valor-verdad? (not (eqv? (car args) (cadr args)))))
+      (primitiva-comparador-igual () (valor-verdad? (equal? (car args) (cadr args))))
+      (primitiva-modulo () (modulo (car args) (cadr args)))
+      (else "faltan casos bianrio")
+ 
+      
+      
+                       
+      )))
+
+;Funcion que resuelve las operaciones de cada primitiva unaria
+;apply-unary-primitive: <primitiva> <list-of-expression> -> numero
+(define apply-unary-primitive
+  (lambda (prim rands env)
+    (let( (arg (eval-rands rands env)))
+    (cases unary-primitive prim
+      (primitive-lenght () (string-length (car arg)))
+      (primitive-add1 () (+ 1 (car arg)))
+      (primitive-sub1 () (- (car arg) 1))
+      (primitive-neg-boolean () (not (car arg)))
+                                    
+      ;listas
+      (primitive-empty () (null? (car arg)))
+      (primitive-head () (caar arg))
+      (primitive-tail () (cdr (car arg)))
+      (primitive-append-list () (append (car arg) (cadr arg)))
+      (primitive-make-list () (if (null? (car arg)) '() arg))
+      (primitive-list? () (valor-verdad? (pair? arg)))
+      ;vectores
+      (primitive-vector? () (valor-verdad? (vector? (car arg))))
+      (primitive-make-vec () (if (vector? (car arg))  (car arg) (list->vector arg)))
+      (primitive-make-vec-zise () (make-vec-zise arg))
+      (primitive-ref-vector () (vector-ref (car arg) (cadr arg)))
+      (primitive-set-vector () (vector-set! (car arg) (cadr arg) (caddr arg)))
+      (primitive-append-vector () (append-vector (car rands) arg env))
+      (primitive-delete-vec () (delete-val-vector (car rands) arg env))
+      ;diccionarios
+      (primitive-make-dict () (list (car arg) (list->vector (cadr arg))))
+      (primitive-dict? () (valor-verdad? (dict? (car arg))))
+      (primitive-ref-dict () (dict-values (car arg) (cadr arg)))
+      (primitive-set-dict () (set-dict (car arg) (cadr arg) (caddr arg)))
+      (primitive-append-dict () ( append-dict-set (car rands) arg env))
+      (primitive-keys-dict () (caar arg))
+      (primitive-values-dict () (vector->list (cadr (car arg))))
+      ;grafos
+      (primitive-graph () (graph-exp (car arg) (cadr arg)))
+      (primitive-vertex () (vertices-exp (map string->symbol arg)))
+      (primitive-edges () (edges-exp arg))
+      (primitive-edge () (edge-exp (string->symbol  (car arg)) (string->symbol (cadr arg))))
+      (primitive-get-edges () (cases g-exp (car arg) (graph-exp (v e) e)))
+      (primitive-get-vertex () (cases g-exp (car arg) (graph-exp (v e) v)))
+      (primitive-add-edge () (add-edge (car arg) (cadr arg)))
+      (primitive-vecinos-entrantes () (map symbol->string (vecinos-entrantes (car arg) (string->symbol (cadr arg)))))
+      (primitive-vecinos-salientes () (map symbol->string (vecinos-salientes (car arg) (string->symbol (cadr arg)))))
+      (else 'error-apply-unary-primitive)
+      ))))
+
+
+;funciones de grafos--------------------------------------------------------
+
+;ADD-EDGE
+ ;;add-edges-dtype:g-exp x List-> g-exp
+;;usage: (add-edges-dtype grafo e)= resive un g-exp y una arista en forma de lista y si la arista no esta en las aristas del grafo entonces la funcion
+;;crea un nuevo grafo con la arista insertada en el.
+(define add-edge
+  (lambda (grafo e)
+    (let*(
+          ;(ed-ex (edge-exp (car e) (cadr e)))
+          (ed-ex e)
+          (vertices-expresion (cases g-exp grafo (graph-exp (v e) v)))
+          (edges-expresion (cases g-exp grafo (graph-exp (v e) e)))
+          (edges-list (cases es-exp edges-expresion ( edges-exp (l) l)))
+          (new-edge-list (if (not (is-in-edges? edges-list ed-ex))
+                             (insertar-edge ed-ex edges-list)
+                             edges-list
+                             )
+                         )
+          (new-graph (graph-exp vertices-expresion (edges-exp new-edge-list)))
+          
+          )new-graph
+      )
+    )
+  )
+
+;;funcion auxiliar
+;;is-in-edges?:List x e-exp ->Bool
+;;usage:(is-in-edges? edges edge )= resive una lista de e-exp y un e-exp y verifica que ese e-exp este en la lista, si esta retorna true
+;;de lo contrario retorna falso. Se usa para verificar que la arista en la funcion add-edge no este dentro de la lista de e-exp del grafo de tipo g-exp.
+;;<List> ::= ()
+;;::= (<Bool> <List>)
+
+(define is-in-edges?
+  (lambda (edges edge)
+    (if(null? edges)
+       #f
+       (let(
+             (a (cases e-exp edge (edge-exp (a b) a)))
+             (b (cases e-exp edge (edge-exp (a b) b)))
+             (c (cases e-exp (car edges) (edge-exp (c d) c)))
+             (d (cases e-exp (car edges) (edge-exp (c d) d)))
+             
+             
+           )(or (and (eqv? a c) (eqv? b d))
+             (is-in-edges? (cdr edges) edge))
+
+
+             ))
+      
+      )
+)
+
+;;funcion auxiliar
+
+;;insertar-edge: List x e-exp ->List
+;;usage: (isertar-edge edge edges)= resive  una arista de tipo e-exp y una lista de aristas de tipo e-exp e inserta la arista al final de esta lista. Se usa en la funcion add-edge
+;;para insertar la arista .
+;;<List> ::= ()
+;;::= (<e-exp> <List>)
+
+(define insertar-edge
+  (lambda(edge edges)
+    (if (null? edges)
+        (list edge)
+        (cons (car edges) (insertar-edge edge (cdr edges)))
+        )
+    )
+  )
+
+;VESINOS-ENTRANTES
+
+;;vecinos-entrantes:g-exp x List->g-exp
+;;usage:(vecinos-entrantes grafo a) = resive un grafo de tipo g-exp y un vertice. retorna una lista con los nodos desde los cuales se pueden llegar al nodo dado.
+
+;;funcion auxiliar
+
+;;buscar-lp: List x symbol ->List
+;;usage: (buscar-lp a list-edges) = busca los nodos desde los cuales se puede llegar al nodo a.
+;;<List> ::= ()
+;;::= (<symbol> <List>)
+
+(define vecinos-entrantes
+  (lambda (grafo a )
+    (cases g-exp grafo
+      (graph-exp (v e)
+                 (letrec(
+
+                         (list-edges (cases es-exp e (edges-exp (l) l)))
+                         (buscar-lp
+                          (lambda (a lp)
+                            (if (null? lp)
+                                empty
+                                (let*(
+                                    (x (cases e-exp (car lp) (edge-exp (a b) a)))
+                                    (y (cases e-exp (car lp) (edge-exp (a b) b)))
+                                    (respuesta (if (eqv? a y) 
+                                    (cons x (buscar-lp a (cdr lp)))
+                                    (buscar-lp a (cdr lp))
+
+                                    ))
+                                    )
+                                  respuesta
+                                  )
+                                )
+                            )
+                          )
+                         )
+                   (buscar-lp a list-edges)
+                   )
+                 )
+      )
+    )
+  )
+
+;;vecinos-salientes:g-exp x List->g-exp
+;;usage:(vecinos-salientes grafo a) = resive un grafo de tipo g-exp y un vertice. retorna una lista con los nodos  a los cuales
+;;se puede llegar desde el nodo dado.
+
+;;funcion auxiliar
+
+;;buscar-lp: List x symbol ->List
+;;usage: (buscar-lp a list-edges) = busca los nodos a los cuales se puede llegar desde el nodo a.
+;;<List> ::= ()
+;;::= (<symbol> <List>)
+
+(define vecinos-salientes
+  (lambda (grafo a )
+    (cases g-exp grafo
+      (graph-exp (v e)
+                 (letrec(
+
+                         (list-edges (cases es-exp e (edges-exp (l) l)))
+                         (buscar-lp
+                          (lambda (a lp)
+                            (if (null? lp)
+                                empty
+                                (let*(
+                                    (x (cases e-exp (car lp) (edge-exp (a b) a)))
+                                    (y (cases e-exp (car lp) (edge-exp (a b) b)))
+                                    (respuesta (if (eqv? a x) 
+                                    (cons y (buscar-lp a (cdr lp)))
+                                    (buscar-lp a (cdr lp))
+
+                                    ))
+                                    )
+                                  respuesta
+                                  )
+                                )
+                            )
+                          )
+                         )
+                   (buscar-lp a list-edges)
+                   )
+                 )
+      )
+    )
+  )
+
+;d-types grafos--------------------------------------------------------------
+
+(define-datatype g-exp g-exp?
+ (graph-exp (v vs-exp?)
+        (g es-exp?)
+        
+        )
+                
+  )
+                
+(define-datatype vs-exp vs-exp?
+  (vertices-exp (vsy (list-of symbol?)))
+  )
+
+
+(define-datatype es-exp es-exp?
+  (edges-exp (e (list-of e-exp?)))
+ )
+
+
+(define-datatype e-exp e-exp?
+  (edge-exp (sym-left symbol?)
+            (sym-right symbol?)
+            )
+  )
+
+    
+;---------------------------------------------------------------------TIPOS----------------------------------------------------
+
+;El Interpretador + checker (FrontEnd + Evaluación + señal para lectura )
+
+(define interpretador-tipos
+  (sllgen:make-rep-loop  "--> "
+    (lambda (pgm) (aux-interpretador  pgm)) 
+    (sllgen:make-stream-parser 
+      scanner-spec-simple-interpreter
+      grammar-simple-interpreter)))
+
+(define aux-interpretador
+  (lambda (x)
+    (if (type? (type-of-program x)) (eval-program  x) 'error-iterpretador)))
+
+;***********************************************************************************************************************
+;*********************************************   Definición tipos     **************************************************
+;***********************************************************************************************************************
+
+(define-datatype type type?
+  (atomic-type
+   (name symbol?))
+  (proc-type
+   (arg-types (list-of type?))
+   (result-type type?))
+  (vector-type (t  type?))
+  (list-type (t type?))
+  (dict-type (k type?)
+             (v type?)) 
+  )
+
+;***********************************************************************************************************************
+;***********************************************************************************************************************
+
+;***********************************************************************************************************************
+;*************************************************   Type Checker     **************************************************
+;***********************************************************************************************************************
+
+;type-of-program: <programa> -> type
+; función que chequea el tipo de un programa teniendo en cuenta un ambiente dado (se inicializa dentro del programa)
+(define type-of-program
+  (lambda (fusion)
+    (cases fusion-lang fusion
+      (fusion-exp (id-exp g-exps p-exp) (type-of-fusion-lang id-exp g-exps p-exp (empty-tenv))))))
+
+
+
+(define extend-tenv-recursively
+   (lambda (id-exps exps tenv)
+     (let*(
+           (len (length id-exps))
+           (vec (make-vector len))
+           (names (make-vector len))   
+           )
+       
+       (for-each
+        (lambda (pos body id)
+          
+          (let*(
+              (list-name-texp (cases id-exp id (const-exp (texp name) (list name texp))
+                                (identifier-var-exp (texp name) (list name texp))
+                                (proc-id-exp (texp name) (list name texp))))
+                            
+              (result-type (expand-type-expression (cadr list-name-texp)))
+               
+               )
+          (if (proc? body)
+              
+              (cases proc body (procedure (texps ids body)
+              (let(
+
+                   (arg-types (expand-type-expressions texps))
+                   
+                   )
+                (vector-set! vec pos (proc-type arg-types result-type)))))
+
+              (vector-set! vec pos result-type)
+                  
+              )
+            (vector-set! names  pos (car list-name-texp))
+            
+           ))
+       (iota len) exps id-exps)
+
+       
+       (extend-tenv (vector->list names) (vector->list vec) tenv)
+
+       )))
+
+
+(define type-of-fusion-lang
+  (lambda(id-exps exps p-body tenv)
+ (let(
+      (env (extend-tenv-recursively id-exps exps tenv))
+     )
+   
+         (for-each
+        (lambda (body id)
+          (let*(
+                
+               (texp (cases id-exp id (const-exp (texp name) texp) (identifier-var-exp (texp name) texp) (proc-id-exp (texp name) texp)))
+               
+               (result-type (expand-type-expression texp))
+               
+               )
+            
+              (if (proc? body) 
+              
+              (cases proc body (procedure (texps ids body)
+                                          (let
+                                               (
+                                               (arg-types (expand-type-expressions texps))
+
+                                               )
+                                            (check-equal-type!
+                                            (type-of-expression
+                                             body
+                                            (extend-tenv ids arg-types env))
+                                            result-type body))))
+              
+              
+            (check-equal-type!
+               (type-of-expression body env) result-type body)
+
+              ))) exps id-exps)
+
+          (type-of-expression p-body env)
+   )))
+
+          
+          
+;eval-expression: <expression> <enviroment> -> type
+; chequea el tipo de la expresión en el ambiente de entrada
+(define type-of-expression
+  (lambda (exp tenv)
+    (cases expression exp
+
+      (main-exp (exp) (type-of-expression exp tenv))
+      
+      (lit-ent-exp (number)
+               int-type)
+      (text-exp (text) string-type)
+  
+      (lit-float-exp (number)
+                     float-type)
+     
+      (true-exp ()
+                bool-type)
+      (false-exp ()
+                 bool-type)
+      (var-exp (id)
+               (apply-tenv tenv id))
+      (empty-list-exp (t) (expand-type-expression t))
+
+      (empty-vec-exp (t) (expand-type-expression t))
+
+      (print-exp (exp) none-type)
+       
+      (if-exp (test-exp true-exp false-exp)
+              (let ((test-type (type-of-expression test-exp tenv))
+                    (false-type (type-of-expression false-exp tenv))
+                    (true-type (type-of-expression true-exp tenv)))
+                (check-equal-type! test-type bool-type test-exp)
+                (check-equal-type! true-type false-type exp)
+                true-type))
+      (function-exp (texps ids body)
+                (type-of-proc-exp texps ids body tenv))
+      (primapp-un-exp (prim rands)
+                   (type-of-application
+                    (type-of-primitive prim rands tenv)
+                    (types-of-expressions rands tenv)
+                    prim rands exp))
+      
+      (primapp-bin-exp(exp1 prim exp2)
+                      (type-of-application
+                       (type-of-primitive-bin prim exp1 exp2 tenv)
+                       (types-of-expressions (list exp1 exp2) tenv)
+                       prim (list exp1 exp2) exp))
+                       
+                      
+      (app-exp (rator rands)
+               (type-of-application
+                (type-of-expression rator tenv)
+                (types-of-expressions rands tenv)
+                rator rands exp))
+
+      (set-exp (id exp)
+               (let(
+                    (id-type (apply-tenv tenv id))
+                    (exp-type (type-of-expression exp tenv))
+                    )
+                 (check-equal-type! id-type exp-type exp)
+                 none-type
+                 ))
+      
+      (begin-exp (exp exps)
+                 (let(
+                      (exp-type (type-of-expression exp tenv))
+                      (exp-types (types-of-expressions exps tenv))
+                      )
+                   (if (null? exps) exp-type (last exp-types))
+                   ))
+      
+      (locals-exp (id-exps exps body-exp body-exps)
+                  (type-of-locals-exp id-exps exps body-exp body-exps tenv))
+
+      (for-exp (id init-value final-value paso body)
+               (let*(
+                    
+                    (type-init-value (type-of-expression init-value tenv))
+                    (type-id type-init-value)
+                    (type-final-value (type-of-expression final-value tenv))
+                    (type-paso (type-of-expression paso tenv))
+                    )
+                 (begin
+                   
+                   (and (check-equal-type! type-init-value type-final-value init-value)
+                          (check-equal-type! type-final-value type-paso paso))
+                   
+                   (let((tenv (extend-tenv (list id) (list type-id) tenv)))
+                     (type-of-expression body tenv)
+                     none-type
+                   )
+                   )))
+      (while-exp (exp body)
+                 (begin
+                   (check-equal-type! (type-of-expression exp tenv) bool-type exp)
+                   (type-of-expression body tenv)
+                   none-type))
+      (switch-exp (test cases bodies default) (type-of-switch test cases bodies default tenv))
+           
+                     
+      (else 'error-type-of-expression)
+      )))
+
+(define type-of-switch
+  (lambda (test cases bodies default tenv)
+    (let(
+         (test-type (type-of-expression test tenv))
+         (cases-types (types-of-expressions cases tenv))
+         (bodies-types (types-of-expressions bodies tenv))
+         (default-type  (type-of-expression default tenv))                                          
+         
+        )
+      (map (lambda (case-type) (check-equal-type! (car cases-types) case-type bodies)) cases-types)
+      (map (lambda (body-type) (check-equal-type! (car bodies-types) body-type bodies)) bodies-types)
+      (check-equal-type! test-type (car cases-types) test)
+      (car bodies-types))))
+
+;funcion que retorna el tipo de locals-exp 
+(define type-of-locals-exp
+(lambda(id-exps exps body-exp body-exps tenv)
+ (let(
+     (env (extend-tenv-recursively id-exps exps tenv))
+     )
+   (for-each
+        (lambda (body id)
+          (let*(
+               (texp (cases id-exp id (const-exp (texp name) texp) (identifier-var-exp (texp name) texp) (proc-id-exp (texp name) texp)))
+               (result-type (expand-type-expression texp))
+               
+               )
+            
+              (if (proc? body) 
+              
+              (cases proc body (procedure (texps ids body)
+                                          (let
+                                               (
+                                               (arg-types (expand-type-expressions texps))
+
+                                               )
+                                            (check-equal-type!
+                                            (type-of-expression
+                                             body
+                                            (extend-tenv ids arg-types env))
+                                            result-type body))))
+              
+              
+            (check-equal-type!
+               (type-of-expression body env) result-type body)
+
+              ))) exps id-exps)
+
+         (let(
+              (exp-type (type-of-expression body-exp env))
+              (exp-types (types-of-expressions body-exps env))
+               )
+               (if (null? body-exps) exp-type (last exp-types)))
+   )))
+
+;check-equal-type!: <type> <type> <expression> -> 
+; verifica si dos tipos son iguales, muestra un mensaje de error en caso de que no lo sean
+(define check-equal-type!
+  (lambda (t1 t2 exp)
+    (if (not (equal? t1 t2))
+        (eopl:error 'check-equal-type!
+                    "Types didn’t match: ~s != ~s in~%~s"
+                    (type-to-external-form t2)
+                    (type-to-external-form t1)
+                    exp)
+        #t)))
+
+;type-to-external-form: <type> -> lista o simbolo
+; recibe un tipo y devuelve una representación del tipo facil de leer
+(define type-to-external-form
+  (lambda (ty)
+    (cases type ty
+      (atomic-type (name) name)
+      (proc-type (arg-types result-type)
+                 (append
+                  (arg-types-to-external-form arg-types)
+                  '(->)
+                  (list (type-to-external-form result-type))))
+      
+      (vector-type (t) (string->symbol (string-append "vec<"(symbol->string (type-to-external-form t)) ">")))
+      
+      (list-type (t) (string->symbol (string-append "list<"(symbol->string (type-to-external-form t)) ">")))
+      
+      (dict-type (t1 t2)  (string->symbol (string-append "dict<"(symbol->string (type-to-external-form t1)) "," (symbol->string (type-to-external-form t2)) ">")))
+ 
+      )))
+
+;funcion que convierte los tipos en sintaxis abstracta en una forma legible
+(define arg-types-to-external-form
+  (lambda (types)
+    (if (null? types)
+        '()
+        (if (null? (cdr types))
+            (list (type-to-external-form (car types)))
+            (cons
+             (type-to-external-form (car types))
+             (cons '*
+                   (arg-types-to-external-form (cdr types))))))))
+
+;type-of-proc-exp: (list-of <type-exp>) (list-of <symbol>) <expression> <tenv> -> <type>
+; función auxiliar para determinar el tipo de una expresión de creación de procedimiento
+(define type-of-proc-exp
+  (lambda (texps ids body tenv)
+    (let ((arg-types (expand-type-expressions texps)))
+      (let ((result-type
+             (type-of-expression body
+                                 (extend-tenv ids arg-types tenv))))
+        (proc-type arg-types result-type)))))
+
+;type-of-application: <type> (list-of <type>) <symbol> (list-of <symbol>) <expresion> -> <type>
+; función auxiliar para determinar el tipo de una expresión de aplicación
+(define type-of-application
+  (lambda (rator-type rand-types rator rands exp)
+    (cases type rator-type
+      (proc-type (arg-types result-type)
+                 (if (= (length arg-types) (length rand-types))
+                     (begin
+                       (for-each
+                        check-equal-type!
+                        rand-types arg-types rands)
+                       result-type)
+                     (eopl:error 'type-of-expression
+                                 (string-append
+                                  "Wrong number of arguments in expression ~s:"
+                                  "~%expected ~s~%got ~s")
+                                 exp
+                                 (map type-to-external-form arg-types)
+                                 (map type-to-external-form rand-types))))
+      (else
+       (eopl:error 'type-of-expression
+                   "Rator not a proc type:~%~s~%had rator type ~s"
+                   rator (type-to-external-form rator-type))))))
+
+;type-of-primitive: <primitive> -> <type>
+; función auxiliar para determinar el tipo de una primitiva
+(define type-of-primitive
+  (lambda (prim rands tenv)
+     (let*(
+        (arg-types (types-of-expressions rands tenv))
+        (typ  (if (not (null? arg-types)) (car arg-types) (type-error arg-types))) 
+        (equal-types? (lambda (args-t) ( (list-of (lambda(t) (equal? t (car args-t)))) args-t) ))
+        (validate-type? (lambda (t) (or (equal? t float-type) (equal? t int-type) (equal? t bool-type) (equal? t string-type)))) 
+        
+        )
+    (cases unary-primitive prim
+      (primitive-lenght () (proc-type (list string-type) int-type))
+      
+      (primitive-neg-boolean () (proc-type (list bool-type) bool-type))
+       
+      (primitive-add1 ()
+                 (proc-type (list int-type) int-type))
+      (primitive-sub1 ()
+                 (proc-type (list int-type) int-type))
+      
+      (zero-test-prim ()
+                      (proc-type (list int-type) bool-type))
+      
+      ;listas
+      (primitive-list? () (proc-type (list typ) bool-type))
+
+      (primitive-head ()  (proc-type (list typ) (cases type typ (list-type (t) t) (else (type-error typ)) )))
+      
+      (primitive-tail () (proc-type (list typ) typ))
+      
+      (primitive-make-list () (proc-type arg-types (if  (equal-types? arg-types)  (list-type typ) (list-type none-type)))) ;quite validate type  y equal-types
+
+      (primitive-empty () (proc-type (list (cases type typ (list-type (t) typ) (else (type-error typ)))) bool-type))
+
+      (primitive-append-list () (proc-type (if (and equal-types? (cases type typ (list-type (t) #t) (else #f)))
+                                               (list typ typ) (type-error arg-types)) typ))
+
+      ;vectores
+
+      (primitive-vector? () (proc-type (list typ) bool-type))
+
+      (primitive-make-vec () (proc-type (if (and equal-types? (validate-type? typ)) arg-types (type-error arg-types)) (vector-type typ)) )
+
+     (primitive-make-vec-zise () (proc-type (list int-type (cadr arg-types)) (vector-type (cadr arg-types))))
+
+     (primitive-ref-vector () (proc-type (list (cases type typ (vector-type (t) typ) (else (type-error typ))) int-type) typ))
+
+      (primitive-set-vector () (proc-type ( list
+                                            (cases type typ (vector-type (t) typ) (else (type-error typ)))
+                                            int-type
+                                            (cases type typ (vector-type (t) t) (else (type-error typ)))
+                                            )
+                                            typ))
+      (primitive-append-vector() (proc-type (append (cases type typ (vector-type (t) (list typ)) (else (type-error typ)))
+                                                  (if (and (equal-types? (cdr arg-types)) (validate-type? (car (cdr arg-types)))) (cdr arg-types) (type-error (cdr arg-types))))
+                                            typ))
+
+      (primitive-delete-vec () (proc-type (list (cases type typ (vector-type (t) typ) (else (type-error typ))) int-type) typ))
+
+      ;diccionarios
+      
+      (primitive-make-dict () (let(
+                                    (key-type (cases type typ (list-type (t) t) (else (type-error typ))))
+                                    (value-type (cases type (cadr arg-types) (list-type (t) t) (else (type-error typ))))
+                                   )
+                               (proc-type
+                               (list typ (cadr arg-types))
+                               (dict-type key-type value-type)
+                                 )
+                               ))
+      (primitive-dict? () (proc-type (list typ) bool-type))
+
+      (primitive-ref-dict () (let(
+                                  (d-types (cases type typ (dict-type (t1 t2) (list t1 t2)) (else (type-error typ))))
+                                  )
+                               (proc-type (list typ (car d-types)) (cadr d-types))))
+      (primitive-set-dict () (let(
+                                  (d-types (cases type typ (dict-type (t1 t2) (list t1 t2)) (else (type-error typ))))
+                                  )
+                               (proc-type (list typ (car d-types) (cadr d-types)) int-type)))
+                                         
+                                         
+      (primitive-append-dict () (let(
+                                  (d-types (cases type typ (dict-type (t1 t2) (list t1 t2)) (else (type-error typ))))
+                                  )
+                               (proc-type (list typ (list-type (car d-types)) (list-type (cadr d-types))) int-type)))
+      
+      (primitive-keys-dict () (let(                                            
+                                  (d-types (cases type typ (dict-type (t1 t2) (list t1 t2)) (else (type-error typ))))
+                                  )
+                               (proc-type (list typ) (list-type (car d-types)))))
+       (primitive-values-dict () (let(                                            
+                                  (d-types (cases type typ (dict-type (t1 t2) (list t1 t2)) (else (type-error typ))))
+                                  )
+                               (proc-type (list typ) (list-type (cadr d-types)))))
+
+      (primitive-graph() (proc-type  (list vertex-type edges-type) graph-type))
+      
+      (primitive-vertex () (proc-type (if (and (equal? typ string-type) (equal-types? arg-types)) arg-types (type-error arg-types)) vertex-type))
+
+      (primitive-edges () (proc-type (if (and (equal? typ edge-type) (equal-types? arg-types)) arg-types (type-error arg-types)) edges-type))
+
+      (primitive-edge () (proc-type (if (and (equal? typ string-type) (equal-types? arg-types) (equal? (length arg-types) 2)) arg-types (type-error arg-types)) edge-type))
+
+      (primitive-get-edges () (proc-type (list graph-type) edges-type))
+
+      (primitive-get-vertex () (proc-type (list graph-type) vertex-type))
+
+      (primitive-add-edge () (proc-type (list graph-type edge-type) graph-type))
+
+      (primitive-vecinos-entrantes () (proc-type (list graph-type string-type) (list-type string-type)))
+
+      (primitive-vecinos-salientes () (proc-type (list graph-type string-type) (list-type string-type)))
+
+      
+      (else 'error-type-of-primitive)
+
+      ))))
+
+ (define type-error
+   (lambda (t) (eopl:error 'type-of-primitive "type-error in ~s" (if (pair? t) (arg-types-to-external-form t) (type-to-external-form t)))))
+
+(define type-of-primitive-bin
+  (lambda (prim exp1 exp2 tenv)
+    (let*(
+         (exp1-type  (type-of-expression exp1 tenv))
+          (exp2-type (type-of-expression exp2 tenv))
+          (chequeo-int-float (lambda(exp1-type exp2-type)
+                             (if (and (or (equal? exp1-type int-type) (equal? exp1-type float-type)) (check-equal-type!  exp1-type exp2-type prim))
+                                 (proc-type (list exp1-type exp2-type ) exp1-type)
+                                 
+                             (eopl:error 'primitive-bin
+                    "Types didn't supported. given: ~s,~s. expected: int or float"
+                    (type-to-external-form exp1-type)
+                    (type-to-external-form exp2-type)))
+                             ))
+          (chequeo-mayor-menor (lambda (t1 t2)
+                                (if (and (or (equal? t1 int-type) (equal? t1 float-type) (equal? t1 string-type)) (check-equal-type!  t1 t2 prim))
+                                    (proc-type (list t1 t2) bool-type)
+                                    (eopl:error 'primitive-bin "types didn't support"))))
+          (chequeo-concat (lambda (t1 t2)
+                                 (if (and (equal? t1 string-type) (check-equal-type! t1 t2 exp1-type)) (proc-type (list string-type string-type) string-type)
+                                     (eopl:error 'primitive-bin
+                    "Types didn't supported. given: ~s,~s. expected: string string"
+                    (type-to-external-form t1)
+                    (type-to-external-form t2)))))
+                                     
+           
+           )
+
+     (cases primitiva-binaria prim
+
+      (primitiva-suma () (chequeo-int-float exp1-type exp2-type )) 
+      (primitiva-resta () (chequeo-int-float exp1-type exp2-type ))
+      (primitiva-div () (chequeo-int-float exp1-type exp2-type ))
+      (primitiva-multi () (chequeo-int-float exp1-type exp2-type ))
+      (primitiva-comparador-igual () (proc-type (list exp1-type exp2-type) bool-type))
+      (primitiva-diferente () (proc-type (list exp1-type exp2-type) bool-type))
+      (primitiva-mayor () (chequeo-mayor-menor exp1-type exp2-type))
+       (primitiva-menor () (chequeo-mayor-menor exp1-type exp2-type))
+       (primitiva-mayor-igual () (chequeo-mayor-menor exp1-type exp2-type))
+       (primitiva-menor-igual () (chequeo-mayor-menor exp1-type exp2-type))
+       (primitiva-concat () (chequeo-concat exp1-type exp2-type))
+       (primitiva-modulo () (chequeo-int-float exp1-type exp2-type))
+       
+      (else 'faltan_casos)))))
+
+;types-of-expressions: (list-of <type-exp>) <tenv> -> (list-of <type>)
+; función que mapea la función type-of-expresion a una lista
+(define types-of-expressions
+  (lambda (rands tenv)
+    (map (lambda (exp) (type-of-expression exp tenv)) rands)))
+
+;type-of-primitive: (list-of <symbol>) (list-of <expression>) <expression> <tenv> -> <type>
+; función auxiliar para determinar el tipo de una expresión let
+(define type-of-let-exp
+  (lambda (ids rands body tenv)
+    (let ((tenv-for-body
+           (extend-tenv
+            ids
+            (types-of-expressions rands tenv)
+            tenv)))
+      (type-of-expression body tenv-for-body))))
+
+;type-of-primitive: (list-of <type-exp>) (list-of <symbol>) (list-of (list-of <type-exp>)) (list-of (list-of <symbol>)) (list-of <expression>) <expression> <tenv> -> <type>
+; función auxiliar para determinar el tipo de una expresión letrec
+(define type-of-letrec-exp
+  (lambda (result-texps proc-names texpss idss bodies letrec-body tenv)
+    (let ((arg-typess (map (lambda (texps)
+                             (expand-type-expressions texps))
+                           texpss))
+          (result-types (expand-type-expressions result-texps)))
+      (let ((the-proc-types
+             (map proc-type arg-typess result-types)))
+        (let ((tenv-for-body
+               (extend-tenv proc-names the-proc-types tenv)))
+          (for-each
+           (lambda (ids arg-types body result-type)
+             (check-equal-type!
+              (type-of-expression
+               body
+               (extend-tenv ids arg-types tenv-for-body))
+              result-type
+              body))
+           idss arg-typess bodies result-types)
+          (type-of-expression letrec-body tenv-for-body))))))
+
+;***********************************************************************************************************************
+;***********************************************************************************************************************
+
+;***********************************************************************************************************************
+;********************************************  Ambientes de tipos  *****************************************************
+;***********************************************************************************************************************
+
+(define-datatype type-environment type-environment?
+  (empty-tenv-record)
+  (extended-tenv-record
+    (syms (list-of symbol?))
+    (vals (list-of type?))
+    (tenv type-environment?)))
+
+(define empty-tenv empty-tenv-record)
+(define extend-tenv extended-tenv-record)
+
+(define apply-tenv 
+  (lambda (tenv sym)
+    (cases type-environment tenv
+      (empty-tenv-record ()
+        (eopl:error 'apply-tenv "Unbound variable ~s" sym))
+      (extended-tenv-record (syms vals env)
+        (let ((pos (list-find-position sym syms)))
+          (if (number? pos)
+            (list-ref vals pos)
+            (apply-tenv env sym)))))))
+
+;***********************************************************************************************************************
+;***********************************************************************************************************************
+
+;***********************************************************************************************************************
+;****************************************************  Tipos  **********************************************************
+;***********************************************************************************************************************
+
+(define int-type
+  (atomic-type 'int))
+
+(define bool-type
+  (atomic-type 'bool))
+
+(define float-type
+  (atomic-type 'float))
+
+(define string-type
+  (atomic-type 'string))
+
+(define int-list-type
+  (list-type (atomic-type 'int)))
+
+(define float-list-type
+  (list-type (atomic-type 'float)))
+
+(define bool-list-type
+  (list-type (atomic-type 'bool)))
+
+(define string-list-type
+  (list-type (atomic-type 'string)))
+
+(define none-type
+  (atomic-type 'None-type))
+
+(define graph-type
+  (atomic-type 'graph))
+
+(define vertex-type
+  (atomic-type 'vertex))
+
+(define edges-type
+  (atomic-type 'edges))
+
+(define edge-type
+  (atomic-type 'edge))
+    
+
+(define expand-type-expression
+  (lambda (texp)
+    (cases type-exp texp
+      (int-type-exp () int-type)
+      (bool-type-exp () bool-type)
+      (float-type-exp () float-type)
+      (String-type-exp () string-type)
+      (list-type-exp (ty-e) (list-type (expand-type-expression ty-e)))
+      (vector-type-exp (ty-e) (vector-type (expand-type-expression ty-e)))
+      (dict-type-exp (ty-e1 ty-e2) (dict-type (expand-type-expression ty-e1) (expand-type-expression ty-e2)))
+      (none-type-exp () none-type)
+      (graph-type-exp () graph-type)
+      (vertex-type-exp () vertex-type)
+      (edges-type-exp () edges-type)
+      (edge-type-exp () edge-type)
+      (proc-type-exp (arg-texps result-texp) 
+                     (proc-type
+                      (expand-type-expressions arg-texps)
+                      (expand-type-expression result-texp)))
+      
+      
+      (else 'error-expand-type-expression)
+      )))
+
+(define expand-type-expressions
+  (lambda (texps)
+    (map expand-type-expression texps)))
+
+
+
+;***********************************************************************************************************************
+;***********************************************************************************************************************
+
+
+
+;---------------------------------------------------------------------TIPOS----------------------------------------------------
+                  
+  
+
+;Funcione que retorna "true" si una operacion binaria es verdadera, o "false" si
+;la exprecion es falsa
+;valor_verdad?: boolean => string
+;usage:(valor-verdad? boolean) => "true" si el booleano es #t o "false" de lo contrario
+
+
+(define valor-verdad?
+  (lambda (bool)
+   bool))
+
+
+;Tipos de datos para la sintaxis abstracta de la gramática
+;Construidos automáticamente:
+
+(sllgen:make-define-datatypes scanner-spec-simple-interpreter grammar-simple-interpreter)
+
+(define show-the-datatypes
+  (lambda () (sllgen:list-define-datatypes scanner-spec-simple-interpreter grammar-simple-interpreter)))
+
+;-----------------------------------------------------------------------------------------------
+;Parser, Scanner, Interfaz
+
+;El FrontEnd (Análisis léxico (scanner) y sintáctico (parser) integrados)
+(define scan&parse
+  (sllgen:make-string-parser scanner-spec-simple-interpreter grammar-simple-interpreter))
+
+
+;El Analizador Léxico (Scanner)
+(define just-scan
+  (sllgen:make-string-scanner scanner-spec-simple-interpreter grammar-simple-interpreter))
+
+;El Interpretador (FrontEnd + Evaluación + señal para lectura )
+(define interpretador
+  (sllgen:make-rep-loop  "--> "
+    (lambda (pgm) (eval-program  pgm)) 
+    (sllgen:make-stream-parser 
+      scanner-spec-simple-interpreter
+      grammar-simple-interpreter)))
+
+;-----------------------------------------------------------------------------------------------
+
+(define eval-program
+  (lambda (flang)
+    (cases fusion-lang flang
+      (fusion-exp (id-exps exps program-body)
+                       (let(
+                            (env 
+                                   (let(
+                                        (bodies (eval-rands exps (empty-env)))
+                                        )
+                                     (extend-env-recursively2 id-exps bodies (empty-env))))
+                            
+                            )
+                         (eval-expression program-body env)
+                         )
+                       ))))
+
+; funciones auxiliares para aplicar eval-expression a cada elemento de una 
+; lista de operandos (expresiones)
+(define eval-rands
+  (lambda (rands env)
+    (map (lambda (x) (eval-rand x env)) rands)))
+
+;funcion que aplica eval-expression a un solo elemento
+(define eval-rand
+  (lambda (rand env)
+    (eval-expression rand env)))
+
+
+        
+;Funcion que extiende un ambiente y evalua un procedimiento en ese nuevo ambiente extendido
+;apply-procedure: <procedure> <list-of expression> -> numero
+(define apply-procedure
+  (lambda (proc args)
+    (cases procval proc
+      (closure (ids body env)
+           (cases expression body
+                 (set-exp (id rhs-exp)
+                          (eval-expression body env))
+                 (else (eval-expression body (extend-env ids args (make-boolean-list (length args) #f) env)))
+                 )
+           )
+                 
+               
+      )
+    )
+  )
+                      
+            
+;-------------------------------------------------------------------------------------------
+;Procedimientos
+;define-datatype de los procedimientos
+(define-datatype procval procval?
+  (closure
+   (ids (list-of symbol?))
+   (body expression?)
+   (env environment?)))
+
+;-------------------------------------------------------------------------------------------
+;Ambientes
+;definición del tipo de dato ambiente
+(define-datatype environment environment?
+  (empty-env-record)
+  (extended-env-record
+   (syms (list-of symbol?))
+   (vec vector?)
+   (const (list-of boolean?))
+   (env environment?)))
+
+(define scheme-value? (lambda (v) #t))
+
+;empty-env:      -> enviroment
+;función que crea un ambiente vacío
+(define empty-env  
+  (lambda ()
+    (empty-env-record)))       ;llamado al constructor de ambiente vacío 
+
+
+;extend-env: <list-of symbols> <list-of numbers> enviroment -> enviroment
+;función que crea un ambiente extendido
+(define extend-env
+  (lambda (syms vals consts env)
+    (extended-env-record syms (list->vector vals) consts env)))
+
+
+;extiende el ambiente con los datatypes id-exps bodies y el ambiente de tal forma que las variables
+;se conoscan a si mismas para implementar la recursion en los procedimientos
+
+(define extend-env-recursively2
+  (lambda (id-exps bodies old-env)
+    (let* (
+      (len (length id-exps))
+      (vec (make-vector len))
+      (names (map (lambda (id) (cases id-exp id (const-exp (texp name) name) (identifier-var-exp (texp name) name) (proc-id-exp (texp name) name))) id-exps))
+      (consts (map (lambda (id) (cases id-exp id (const-exp (texp name) #t) (else #f))) id-exps))
+      (env (extended-env-record names vec consts old-env ))
+      )
+      
+      (for-each
+            (lambda (pos body)
+              (if (proc? body)
+                  (let(
+                       (ids-body (cases proc body (procedure (texps ids body) (list ids body)))) 
+
+                       )
+              (vector-set! vec pos (closure (car ids-body) (cadr ids-body) env))
+                    )
+              (vector-set! vec pos  body)
+              ))
+                  
+            (iota len) bodies)
+           env)))
+
+;iota: number -> list
+;función que retorna una lista de los números desde 0 hasta end
+(define iota
+  (lambda (end)
+    (let loop ((next 0))
+      (if (>= next end) '()
+        (cons next (loop (+ 1 next)))))))
+
+
+
+;función que busca un símbolo en un ambiente
+(define apply-env
+  (lambda (env sym)
+    (let(
+         (val (apply-env-ref env sym))
+         )
+         
+         (if (reference? val) (deref val)
+             val))))
+     ;(apply-env-ref env sym)))
+    ;env))
+(define apply-env-ref
+  (lambda (env sym)
+    (cases environment env
+      (empty-env-record ()
+                        (eopl:error 'apply-env-ref "No binding for ~s" sym))
+      (extended-env-record (syms vals consts env)
+                           (let* (
+                                 
+                                 (pos (rib-find-position sym syms))
+                                 
+                                 
+                                 
+                                 )
+                             (if (number? pos)
+                                 (let(
+                                      (const (list-ref consts pos))
+                                      )
+                                 (if const (vector-ref vals pos) 
+                                 (a-ref pos vals)
+                                 ))
+                                 (apply-env-ref env sym)))))))
+
+
+
+;*******************************************************************************************
+;Referencias
+
+(define-datatype reference reference?
+  (a-ref (position integer?)
+         (vec vector?)))
+
+(define deref
+  (lambda (ref)
+    (primitive-deref ref)))
+
+(define primitive-deref
+  (lambda (ref)
+    (cases reference ref
+      (a-ref (pos vec)
+             (vector-ref vec pos)))))
+
+(define setref!
+  (lambda (ref val)
+    (primitive-setref! ref val)))
+
+(define primitive-setref!
+  (lambda (ref val)
+    (cases reference ref
+      (a-ref (pos vec)
+             (vector-set! vec pos val)))))
+
+
+;****************************************************************************************
+;Funciones Auxiliares-referencias
+
+; funciones auxiliares para encontrar la posición de un símbolo
+; en la lista de símbolos de un ambiente
+
+(define rib-find-position 
+  (lambda (sym los)
+    (list-find-position sym los)))
+
+(define list-find-position
+  (lambda (sym los)
+    (list-index (lambda (sym1) (equal? sym1 sym)) los)))
+
+(define list-index
+  (lambda (pred ls)
+    (cond
+      ((null? ls) #f)
+      ((pred (car ls)) 0)
+      (else (let ((list-index-r (list-index pred (cdr ls))))
+              (if (number? list-index-r)
+                (+ list-index-r 1)
+                #f))))))
+
+;******************************************************************************************
+
+
+;-------------------------------------------------------------------------------------------
+;Funciones Auxiliares
+
+; funciones auxiliares para encontrar la posición de un símbolo
+; en la lista de símbolos de un ambiente
+
+
+(define list-find-position-string
+  (lambda (str los)
+    (list-index (lambda (str1) (equal? str1 str)) los)))
+
+
+
+;funcion que compara 2 strings.
+;comparar-strings?: string x string x symbol => boolean
+;usage:(comparar-string string1 string2 comparador) => retorna un booleano, resultado de comparar los strings1 y string2 con un determinado comparador que ingresa como simbolo
+
+(define comparar-strings?
+  (lambda (string1 string2 comparador)
+    (cond
+        [(equal? comparador '<) (string<? string1 string2)]
+        [(equal? comparador '>) (string>? string1 string2)]
+        [(equal? comparador '>=) (string>=? string1 string2)]
+        [(equal? comparador '<=) (string<=? string1 string2)]
+        [else (eopl:error "no se pueden comparar los strings")])))
+
+;funcion que compara dos numeros con un determinado comparador en forma de simbolo que resive como parametro.        
+(define comparar-numeros?
+  (lambda (num1 num2 comparador)
+    (cond
+        [(equal? comparador '<) (< num1 num2)]
+        [(equal? comparador '>) (> num1 num2)]
+        [(equal? comparador '>=) (>= num1 num2)]
+        [(equal? comparador '<=) (<= num1 num2)]
+        [else (eopl:error "no se pueden comparar los numeros")])))
+
+(define comparar-booleanos?
+  (lambda (bool1 bool2 comparador)
+    (let(
+         (num1 (if bool1 1  0))
+         (num2 (if bool2 1  0))
+         )
+    (cond
+        [(equal? comparador '<) (< num1 num2)]
+        [(equal? comparador '>) (> num1 num2)]
+        [(equal? comparador '>=) (>= num1 num2)]
+        [(equal? comparador '<=) (<= num1 num2)]
+        [else (eopl:error "no se pueden comparar los numeros")]))))
+  
+    
+
+;funcion que utiliza las funciones comprar-numeros? y comparar-strings? para comparar numeros y strings. retorna un booleano.
+(define comparar
+  (lambda (e1 e2 comparador)
+    (cond
+      [(and (string? e1) (string? e2)) (comparar-strings? e1 e2 comparador)]
+      [(and (number? e1) (number? e2)) (comparar-numeros? e1 e2 comparador)]
+      [(and (boolean? e1) (boolean? e2)) (comparar-booleanos? e1 e2 comparador)]
+      [else (eopl:error "valor esperado, dos strings o dos flotantes")])))
+
+
+        
+ ;funcion que crea un vector de un tamaño determinado y lo llena con un parametro determinado.
+(define make-vec-zise
+   (lambda (arg)
+     (letrec(
+           (tamaño (if (null? arg) 0 (car arg)))
+          (relleno (if (null? arg) '() (cadr arg)))
+          
+          (crear
+           (lambda(tamaño relleno)
+             (if (equal? tamaño 0) '()
+                 (cons relleno (crear (- tamaño 1) relleno))
+                 )))
+          )
+          (list->vector (crear tamaño relleno))
+       )))
+
+
+
+;funcion que elimina un elemento de una lista en determinada posicion. 
+(define eliminar-pos
+   (lambda (arg pos acc)
+     (if (null? arg) '()
+         (cond
+           [(not (equal? acc pos)) (cons (car arg) (eliminar-pos (cdr arg) pos (+ acc 1)))]
+           [(and (equal? acc pos) (not (null? (cdr arg)))) (cons (cadr arg) (eliminar-pos (cddr arg) pos (+ acc 2)))]
+           [else '()]
+           ))))
+
+
+
+;funcion que comprueba si la lista que se le pasa como parametro es la representacion interna de un diccionario.
+ (define dict?
+  (lambda (arg)
+    (let(
+        (keys (car arg))
+        (values (cadr arg))
+      )
+    (cond
+      [(not (pair? keys)) #f]
+      [(not (vector? values)) #f]
+      [(not ((list-of string?) keys)) #f]
+      [(not (comprovar-verdad values)) #f]
+      [else #t]))))
+      
+(define comprovar-verdad
+  (lambda (vec)
+    (letrec(
+         (v (vector->list vec))
+         (t (map (lambda (x) (or (number? x) (boolean? x) (string? x) (symbol? x))) v ))
+         (valor-v (lambda (l) (if (null? l) #t (and (car l) (valor-v  (cdr l))))))
+         )
+      (valor-v t)
+      )))
+
+;funcion que resive una representacion interna de un diccionario y una clave. la funcion retorna el valor del diccionario asociado a dicha clave.
+(define dict-values
+  (lambda (dict key)
+    (let(
+    (pos (list-find-position-string key (car dict)))
+    
+    )
+    (if (not (boolean? pos)) (vector-ref (cadr dict)  pos) "no encontrado"))))
+
+;funcion que modifica un valor asociado a una clave en un diccionario. retorna el diccionario modificado
+(define set-dict
+  (lambda (dict key value )
+    (let*(
+         (pos (list-find-position-string key (car dict)))
+         (v (vector-set! (cadr dict) pos value))
+         )
+      1
+      )))
+
+;funcion que agrega nuevos elementos clave valor a un diccionario. retorna un diccionario con los nuevos elementos agregados
+
+(define append-dict
+  (lambda (dict keys values)
+    (if (and (dict? dict) (equal? (length keys) (length values)))
+    (let* (
+          (new-keys (append (car dict) keys))
+          (new-values (append (vector->list (cadr dict)) values))
+          (new-values-v (list->vector new-values))
+          (d (list new-keys new-values-v))
+          )
+      (if (dict? d ) d "la lista de claves o valores es de tipo incorrecto")
+      )
+    "los parametros no son los adecuados"
+    )))
+
+;---falta
+(define append-dict-set
+  (lambda (id-dict args env)
+    (let*(
+    (dict (car args))
+    (keys(cadr args))
+    (values (caddr args))
+    (new-dict (append-dict dict keys values))
+    (id (cases expression id-dict (var-exp (id) id) (else #f)))
+    
+    )
+     (if (symbol? id)
+         (let(
+          (val (apply-env-ref env id ))
+              )
+    (begin
+         (if (reference? val)
+          (setref!
+           val
+           new-dict)
+           (eopl:error 'set-exp "inmutable value ~s" val))
+           1))
+    new-dict
+      )
+    )))
+
+
+;eval-expression: <expression> <enviroment> -> numero
+; evalua la expresión en el ambiente de entrada
+
+(define eval-expression
+  (lambda (exp env)
+    (cases expression exp
+      (main-exp (exp) (eval-expression exp env))
+      (lit-ent-exp (datum) datum)
+      (lit-float-exp (datum) datum)
+      (var-exp (id) (apply-env env id))
+      (text-exp (text) text)
+      (true-exp () #t)
+      (false-exp () #f)
+      (empty-list-exp (t) '())
+      (empty-vec-exp (t) (vector))
+      (print-exp (ex) (begin (display (eval-expression ex env)) (newline)))
+      (primapp-un-exp (prim rands)
+        (apply-unary-primitive prim rands env));app prim
+      
+      
+      (primapp-bin-exp (exp1 prim exp2)
+                  (let ((arg1 (eval-expression exp1 env))
+                        (arg2 (eval-expression exp2 env)))
+                    (apply-primitive-bin prim (list arg1 arg2))))
+
+      (if-exp(test-exp true-exp false-exp)
+              (if(valor-verdad? (eval-expression test-exp env))
+                (eval-expression true-exp env)
+                (eval-expression false-exp env)))
+
+
+      (function-exp (texps ids body) (procedure texps ids body))
+      
+
+      (app-exp (rator rands)
+                 (let (
+                     (proc (eval-expression rator env))
+                     (args (eval-rands rands env))
+                     
+                     )
+                     (if (procval? proc)
+                         (apply-procedure proc args)
+                         (eopl:error 'eval-expression
+                                 "Attempt to apply non-procedure ~s" proc)
+                         )
+                 )
+               )
+      
+       (set-exp (id rhs-exp)
+                (let(
+                     (val (apply-env-ref env id))
+                     )
+               (begin
+                 (if (reference? val)
+                 (setref!
+                  val
+                  (eval-expression rhs-exp env))
+                 (eopl:error 'set-exp "inmutable value ~s" val))
+                 1)))
+
+      ;block
+      (begin-exp (exp exps) 
+                 (let loop ((acc (eval-expression exp env))
+                             (exps exps))
+                    (if (null? exps) 
+                        acc
+                        (loop (eval-expression (car exps) 
+                                               env)
+                              (cdr exps)))))
+      ;locals
+
+     (locals-exp (names  exps l-body-exp l-body-exps)
+                  (let* (
+                         (args (eval-rands exps env))
+                         (env (extend-env-recursively2 names args env))
+                   )(let loop ((acc (eval-expression l-body-exp env))
+                             (exps l-body-exps))
+                    (if (null? exps) 
+                        acc
+                        (loop (eval-expression (car exps) 
+                                               env)
+                              (cdr exps))))
+                    ))
+      ;ciclos
+
+      (for-exp (id init-value final-value paso body)
+               (let loop ((counter (eval-expression init-value env)) (paso paso)
+                          (env env))
+                 (if (> counter (eval-expression final-value env))
+                     'done
+                     (let ((env (extend-env (list id) (list counter) (list #t) env)))
+                       (eval-expression body env)
+                       (loop (+ counter (eval-expression paso env)) paso env)))))
+      
+      (while-exp (exp body)
+                 (let loop ()
+                   (if (eval-expression exp env) 
+                       (begin
+                         (eval-expression body env)     
+                         (loop))                        
+                       'done)))
+      
+      (switch-exp (test casess bodies default)
+                  (let* (
+                        (id (eval-expression test env))
+                        (id-cases (eval-rands casess env))
+                        (pos (list-find-position id id-cases))
+                        (body (if (number? pos)
+                                  (list-ref bodies pos)
+                                  '()))
+                        )
+                    (if (null? body)
+                        (eval-expression default env)
+                        (eval-expression body env))
+                            
+
+                    )
+                        )
+       
+              
+      (else 'error-eval-expression)
+      )    
+    ))
+
+;funcion que resive las expreciones de los procedimientos en forma abstracta y retorna dos listas, una lista con los ids de los procedimientos y otra con los cuerpos.
+(define listas-proc
+  (lambda (exps list-ids list-bodies)
+    (if (null? exps) (list list-ids list-bodies)
+        (cases expression (car exps)
+          (function-exp (texp ids body)
+                    (listas-proc (cdr exps) (cons ids list-ids) (cons body list-bodies)))
+          (else 'error-listas-proc)
+             
+             ))))
+
+;data-type para manejar los procedimientos sin la clausura
+(define-datatype proc proc?
+  (procedure
+   (texps (list-of type-exp?))
+   (ids (list-of symbol?))
+   (exp expression?)))
+
+;funciones auxiliares para listas-----------------------------------------------------------------------------------------
+(define make-boolean-list
+  (lambda (zise bool)
+    (if (equal? zise 0) '()
+        (cons bool (make-boolean-list (- zise 1) bool)))))
+
+;funciones auxiliares para los vectores-----------------------------------------------------------------------------------
+
+;funcion que agrega elementos a un vector y  lo setea en el ambiente
+(define append-vector
+  (lambda (id-vec args env)
+    (let*(
+    (new-vec (list->vector (append (vector->list (car args)) (cdr args))))
+    (id (cases expression id-vec (var-exp (id) id) (else #f)))
+    
+    )
+     (if (symbol? id)
+         (let(
+          (val (apply-env-ref env id ))
+              )
+    (begin
+         (if (reference? val)
+          (setref!
+           val
+           new-vec)
+           (eopl:error 'set-exp "inmutable value ~s" val))
+           1))
+    new-vec
+      )
+    )))
+
+;funcion que elimina elementos de un vector, y lo setea 
+(define delete-val-vector
+  (lambda (id-vec args env)
+    (let*(
+    (new-vec (list->vector (eliminar-pos (vector->list (car args)) (cadr args) 0)))
+    (id (cases expression id-vec (var-exp (id) id) (else #f)))
+    
+    )
+     (if (symbol? id)
+         (let(
+          (val (apply-env-ref env id ))
+              )
+    (begin
+         (if (reference? val)
+          (setref!
+           val
+           new-vec)
+           (eopl:error 'set-exp "inmutable value ~s" val))
+           1))
+    new-vec
+      )
+    )))
+
+
+       
+           
+;-----------------------------------------------------------------------------------------------
+
+
+
+
+#|
+prueba begin:
+
+@x=100;
+){
+let(
+@p=proc(@x) begin
+set @x=add1(@x)
+@x end;)
+{/app(@p @x) + app(@p @x)/}}
+
+
+let(
+@p= proc @fac(@x) Si /@x == 0/ {1} sino {/@x * app(@fact /@x ~ 1/)/};
+) {app(@p 5)}
+
+
+letrec
+@p= proc(@x) Si /@x == 0/ {1} sino {/@x * app(@p /@x ~ 1/)/}
+in app(@p 5)
+
+
+GLOBALS{
+@x=5}
+PROGRAM{
+letrec
+@p= function(@x) return Si /@x == 0/ {1} sino {/@x * app(@p /@x ~ 1/)/}
+in app(@p @x)
+}
+
+GLOBALS{
+@x=5
+@p= function(@x)  return Si /@x == 0/ {1} sino {/@x * app(@p /@x ~ 1/)/}
+}
+PROGRAM{
+BLOCK{
+set @x=10
+app(@p @x)
+}}
+
+GLOBALS{
+@x=5
+@p= function(@x)  return Si /@x == 0/ {1} sino {/@x * app(@p /@x ~ 1/)/}
+}
+PROGRAM{
+LOCALS{
+@x=10
+
+}{app(@p @x)}}
+
+
+GLOBALS{int @x=5 (int->int) @p=function(int @x) return @x } PROGRAM{app(@p @x)}
+
+GLOBALS{ const int @x=5} PROGRAM{BLOCK{set @x=2 @x}}
+
+GLOBALS{ const int @x=5} PROGRAM{set @x=2}
+
+GLOBALS{var int @x=5 proc (int->int) @p=function(int @x) return @x } PROGRAM{@p}
+
+ GLOBALS{
+var int @x=5
+proc (int->int) @p= function(int @x)  return Si /@x == 0/ {1} sino {/@x * app(@p /@x ~ 1/)/}
+}
+PROGRAM{app(@p @x)}
+
+GLOBALS{
+var int @x=5
+proc (int->int) @p= function(int @x)  return Si /@x == 0/ {1} sino {/@x * app(@p /@x ~ 1/)/}
+
+var list<int> @list= make-list(1 2 3)
+}PROGRAM{ head(@list)}
+
+ GLOBALS{
+var int @x=5
+proc (int->int) @p= function(int @x)  return Si /@x == 0/ {1} sino {/@x * app(@p /@x ~ 1/)/}
+var String @s="hola_"
+var list<int> @list= make-list(1 2 3)
+var bool @b=true
+const int @z=3
+var vector<int> @v=make-vec(1 2 3 4)
+var vector<int> @v2=make-vec-zise(7 2)
+}PROGRAM{@v}
+
+GLOBALS{
+var int @x=5
+proc (int->int) @p= function(int @x)  return Si /@x == 0/ {1} sino {/@x * app(@p /@x ~ 1/)/}
+var String @s="hola_"
+var list<int> @list= make-list(1 2 3)
+var bool @b=true
+const int @z=3
+var vector<int> @v=make-vec(1 2 3 4)
+var vector<int> @v2=make-vec-zise(7 2)
+
+var list<String> @empty= make-list((String))
+}PROGRAM{append-list(@list @empty)}
+
+ GLOBALS{
+var int @x=5
+proc (int->int) @p= function(int @x)  return Si /@x == 0/ {1} sino {/@x * app(@p /@x ~ 1/)/}
+var String @s="hola_"
+var list<int> @list= make-list(1 2 3)
+var bool @b=true
+const int @z=3
+var vector<int> @v=make-vec(1 2 3 4)
+var vector<int> @v2=make-vec-zise(7 2)
+var list<int> @l2= make-list(4 5 6)
+var list<String> @empty= make-list((String))
+}PROGRAM{append-list(@list @l2)}
+
+ GLOBALS{
+var int @x=5
+proc (int->int) @p= function(int @x)  return Si /@x == 0/ {1} sino {/@x * app(@p /@x ~ 1/)/}
+var String @s="hola_"
+var list<int> @list= make-list(1 2 3)
+var bool @b=true
+const int @z=3
+var vector<int> @v=make-vec(1 2 3 4)
+var vector<int> @v2=make-vec-zise(7 2)
+var list<int> @l2= make-list(4 5 6)
+var list<String> @empty= make-list((String))
+var dict<String,int> @d= make-dict(make-list( "andre" "ort") make-list( 1 2 ))
+}PROGRAM{BLOCK{
+set-dict(@d "andre" 0)
+@d}}
+
+GLOBALS{}
+PROGRAM{
+LOCALS{
+var int @x=5
+proc (int->int) @p= function(int @x)  return Si /@x == 0/ {1} sino {/@x * app(@p /@x ~ 1/)/}
+var String @s="hola_"
+var list<int> @list= make-list(1 2 3)
+var bool @b=true
+const int @z=3
+var vector<int> @v=make-vec(1 2 3 4)
+var vector<int> @v2=make-vec-zise(7 2)
+var list<int> @l2= make-list(4 5 6)
+var list<String> @empty= make-list((String))
+var dict<String,int> @d= make-dict(make-list( "andre" "ort") make-list( 1 2 ))
+}
+{
+dict-keys(@d)
+}
+
+
+GLOBALS{var int @z=10}
+PROGRAM{
+LOCALS{
+var int @x=5
+proc (int->int) @p= function(int @x) if {@x == 0} 1 else {@x * app(@p {@x ~ 1})}
+var String @s="hola_"
+var list<int> @list= make-list(1 2 3)
+var bool @b=true
+const int @w=3
+var vector<int> @v=make-vec(1 2 3 4)
+var vector<int> @v2=make-vec-zise(7 2)
+var list<int> @l2= make-list(4 5 6)
+var list<String> @empty= make-list((String))
+var dict<String,int> @d= make-dict(make-list( "andre" "ort") make-list( 1 2 ))
+proc (int->None-type) @for=function(int @i) for @k in range(@i,10,1) do print(@k) done
+proc (int->None-type) @while=function (int @i) while {@i>0} do BLOCK{print(@i) set @i={@i~1}} done
+proc (int->None-type) @while2= function (int @i) while {@i>0} do BLOCK { set @z={@z+2} set @i={@i~1}} done
+}{ app(@while2 @x)
+@z}}
+
+switch (@x){ case 0: 2; case 1:4 ; default : 0}}
+proc (int->int) @switch= function(int @test) switch (@test){ case 0: 10; case 1: 2; default: 0}
+
+GLOBALS{var int @z=10}
+PROGRAM{
+LOCALS{
+var int @x=5
+proc (int->int) @p= function(int @x) if {@x == 0} 1 else {@x * app(@p {@x ~ 1})}
+var String @s="hola_"
+var list<int> @list= make-list(1 2 3)
+var bool @b=true
+const int @w=3
+var vector<int> @v=make-vec(1 2 3 4)
+var vector<int> @v2=make-vec-zise(7 2)
+var list<int> @l2= make-list(4 5 6)
+var list<String> @empty= make-list((String))
+var dict<String,int> @d= make-dict(make-list( "andre" "ort") make-list( 1 2 ))
+proc (int->None-type) @for=function(int @i) for @k in range(@i,10,1) do print(@k) done
+proc (int->None-type) @while=function (int @i) while {@i>0} do BLOCK{print(@i) set @i={@i~1}} done
+proc (int->None-type) @while2= function (int @i) while {@i>0} do BLOCK { set @z={@z+2} set @i={@i~1}} done
+proc (int->int) @switch = function (int @x) switch (@x){ case 0: 2; case 5:4 ; default : 0}
+var vertex<String> @vertex= vertex("a" "b" "c" "d")
+}{@vertex}}
+
+GLOBALS{var int @z=10}
+PROGRAM{
+LOCALS{
+var int @x=5
+proc (int->int) @p= function(int @x) if {@x == 0} 1 else {@x * app(@p {@x ~ 1})}
+var String @s="hola_"
+var list<int> @list= make-list(1 2 3)
+var bool @b=true
+const int @w=3
+var vector<int> @v=make-vec(1 2 3 4)
+var vector<int> @v2=make-vec-zise(7 2)
+var list<int> @l2= make-list(4 5 6)
+var list<String> @empty= make-list((String))
+var dict<String,int> @d= make-dict(make-list( "andre" "ort") make-list( 1 2 ))
+proc (int->None-type) @for=function(int @i) for @k in range(@i,10,1) do print(@k) done
+proc (int->None-type) @while=function (int @i) while {@i>0} do BLOCK{print(@i) set @i={@i~1}} done
+proc (int->None-type) @while2= function (int @i) while {@i>0} do BLOCK { set @z={@z+2} set @i={@i~1}} done
+proc (int->int) @switch = function (int @x) switch (@x){ case 0: 2; case 5:4 ; default : 0}
+var vertex @vertex= vertex("a" "b" "c" "d")
+var edges @edges= edges(edge("a" "b") edge("c" "d"))
+}{
+get-edges(graph(@vertex @edges))}}
+
+
+GLOBALS{var int @z=10 var vertex @vertex= vertex("a" "b" "c" "d")
+var edges @edges= edges(edge("a" "b") edge("c" "d"))}
+PROGRAM{
+LOCALS{
+var int @x=5
+proc (int->int) @p= function(int @x) if {@x == 0} 1 else {@x * app(@p {@x ~ 1})}
+var String @s="hola_"
+var list<int> @list= make-list(1 2 3)
+var bool @b=true
+const int @w=3
+var vector<int> @v=make-vec(1 2 3 4)
+var vector<int> @v2=make-vec-zise(7 2)
+var list<int> @l2= make-list(4 5 6)
+var list<String> @empty= make-list((String))
+var dict<String,int> @d= make-dict(make-list( "andre" "ort") make-list( 1 2 ))
+proc (int->None-type) @for=function(int @i) for @k in range(@i,10,1) do print(@k) done
+proc (int->None-type) @while=function (int @i) while {@i>0} do BLOCK{print(@i) set @i={@i~1}} done
+proc (int->None-type) @while2= function (int @i) while {@i>0} do BLOCK { set @z={@z+2} set @i={@i~1}} done
+proc (int->int) @switch = function (int @x) switch (@x){ case 0: 2; case 5:4 ; default : 0}
+var graph @g=graph(@vertex @edges)
+}{ in-neighbors(@g "a")}}
+
+
+
+
+GLOBALS{var int @z=10 var vertex @vertex= vertex("a" "b" "c" "d")
+var edges @edges= edges(edge("a" "b") edge("c" "d"))}
+PROGRAM{
+LOCALS{
+var int @x=5
+proc (int->int) @p= function(int @x) if {@x == 0} then 1 else {@x * app(@p {@x ~ 1})}
+var String @s="hola_"
+var list<int> @list= make-list(1 2 3)
+var bool @b=true
+const int @w=3
+var vector<int> @v=make-vec(1 2 3 4)
+var vector<int> @v2=make-vec-zise(7 2)
+var list<int> @l2= make-list(4 5 6)
+var list<String> @empty= make-list((String))
+var dict<String,int> @d= make-dict(make-list( "andre" "ort") make-list( 1 2 ))
+proc (int->None-type) @for=function(int @i) for @k in range(@i,10,1) do print(@k) done
+proc (int->None-type) @while=function (int @i) while {@i>0} do BLOCK{print(@i) set @i={@i~1}} done
+proc (int->None-type) @while2= function (int @i) while {@i>0} do BLOCK { set @z={@z+2} set @i={@i~1}} done
+proc (int->int) @switch = function (int @x) switch (@x){ case 0: 2; case 5:4 ; default : 0}
+var graph @g=graph(@vertex @edges)
+}{ in-neighbors(@g "b")}}
+|#
+
+
+;********************************SUSTENTACION***********************************************
+
+
+#|
+
+;punto #9
+
+GLOBALS{
+
+proc (list<int> * (int->int) -> list<int>) @map= function(list<int> @l (int->int) @p)
+{if empty?(@l)
+then make-list((int))
+else append-list( make-list(app(@p head(@l))) app(@map tail(@l) @p))}
+
+proc (int->int) @doble=function( int @num) {{@num*@num}}
+
+var list<int> @list=make-list(3 1 2 5)
+
+}
+PROGRAM{
+main(){
+
+app(@map @list @doble)
+
+}}
+
+;punto #10
+
+;A)
+for-----------------------------------------------------
+GLOBALS{}
+PROGRAM{
+main(){
+for @k in range(1,5,1) do print(@k) done
+}}
+
+;while-------------------------------------------------
+GLOBALS{var int @i=1}
+PROGRAM{
+ main(){
+ while {@i<=5} do BLOCK{print(@i) set @i={@i+1}} done
+}}
+
+
+;B)
+
+;for----------------------------------------------------
+GLOBALS{
+proc (int*int->int) @modulo= function(int @n int @m){
+if {@n<@m} then @n else app( @modulo {@n~@m} @m)}
+
+proc (int->bool) @esPar?=function(int @i){
+{app(@modulo @i 2)  == 0}
+
+}}
+
+PROGRAM{
+
+main(){
+
+for @k in range(1,5,1) do
+
+print(app(@esPar? @k))
+
+done
+
+}}
+
+;while----------------------------------------------------
+GLOBALS{
+
+proc (int*int->int) @modulo= function(int @n int @m){
+if {@n<@m} then @n else app( @modulo {@n~@m} @m)}
+
+proc (int->bool) @esPar?=function(int @i){
+{app(@modulo @i 2)  == 0}}
+
+var int @i=1
+
+
+}
+
+PROGRAM{
+
+main(){
+
+while {@i<=5} do
+
+BLOCK{
+
+print(app(@esPar? @i))
+
+set @i={@i+1}
+
+}
+
+done
+
+}}
+
+punto #7
+
+GLOBALS{
+
+var String @cadena1="hola_mundo_"
+
+var String  @cadena2="bienvenidos"
+
+}
+
+PROGRAM{
+
+main(){
+
+BLOCK{
+
+print(length(@cadena1))
+
+print({@cadena1 concat @cadena2})
+
+}}}
+
+punto #8
+
+GLOBALS{
+
+proc (list<int> * int -> int) @len= function(list<int> @l int @count)
+{
+
+if empty?(@l)
+
+then @count
+
+else app(@len tail(@l) {@count + 1})
+
+}
+
+proc (int->int) @factorial = function(int @x)
+
+{ if {@x == 0}
+
+then 1
+
+else {@x * app(@factorial {@x ~ 1})}}
+
+proc (list<int> * int * vector<int> * vector<int> -> dict<String,vector<int>>) @facts=
+
+function (list<int> @l int @count  vector<int> @valores  vector<int> @factoriales)
+
+{
+
+if empty?(@l)
+
+then make-dict(make-list( "valores" "factoriales") make-list( @valores @factoriales))
+
+else BLOCK{
+
+set-vector(@valores @count head(@l))
+
+set-vector(@factoriales @count app(@factorial head(@l)))
+
+app( @facts tail(@l) {@count + 1} @valores @factoriales)
+
+}}}
+
+PROGRAM
+
+{
+
+main(){
+
+LOCALS{
+
+var list<int> @l=make-list(1 2 3 4 5 7 9)
+
+}
+
+{
+
+app(@facts @l 0 make-vec-zise(app(@len @l 0) 0) make-vec-zise(app(@len @l 0) 0))
+
+}}}
+
+
+punto #6
+
+GLOBALS{}
+
+PROGRAM
+{
+main(){
+
+BLOCK{
+
+print("primiva_menor#####################################################")
+
+print("con_enteros:")
+
+print({1 < 2})
+
+print("con_flotantes:")
+
+print({1.0 < 2.0})
+
+print("con_strings:")
+
+print({"hola" < "hola_mundo"})
+
+print("con_booleanos:")
+
+print({false < true})
+
+print("primiva_mayor######################################################")
+
+print("con_enteros:")
+
+print({1 > 2})
+
+print("con_flotantes:")
+
+print({1.0 > 2.0})
+
+print("con_strings:")
+
+print({"hola" > "hola_mundo"})
+
+print("con_booleanos:")
+
+print({false > true})
+
+print("primiva_menor_igual#################################################")
+
+print("con_enteros:")
+
+print({1 <= 2})
+
+print("con_flotantes:")
+
+print({1.0 <= 2.0})
+
+print("con_strings:")
+
+print({"hola" <= "hola_mundo"})
+
+print("con_booleanos:")
+
+print({false <= true})
+
+print("primiva_mayor_igual###################################################")
+
+print("con_enteros:")
+
+print({1 >= 2})
+
+print("con_flotantes:")
+
+print({1.0 >= 2.0})
+
+print("con_strings:")
+
+print({"hola" >= "hola_mundo"})
+
+print("con_booleanos:")
+
+print({false >= true})
+
+print("primiva_igual#########################################################")
+
+print("con_enteros:")
+
+print({1 == 2})
+
+print("con_flotantes:")
+
+print({1.0 == 2.0})
+
+print("con_strings:")
+
+print({"hola" == "hola_mundo"})
+
+print("con_booleanos:")
+
+print({false == true})
+
+print("primiva_diferente#####################################################")
+
+print("con_enteros:")
+
+print({1 != 2})
+
+print("con_flotantes:")
+
+print({1.0 != 2.0})
+
+print("con_strings:")
+
+print({"hola" != "hola_mundo"})
+
+print("con_booleanos:")
+
+print({false != true})
+
+}}}
+
+punto #5
+
+GLOBALS{}
+
+PROGRAM
+{
+
+main()
+
+{
+
+BLOCK
+{
+
+print("primitivas_para_enteros#######################################")
+
+print("primitiva_multiplicacion:")
+
+print({4*2})
+
+print("primitiva_divicion:")
+
+print({4/2})
+
+print("primitiva_suma:")
+
+print({4+2})
+
+print("primitiva_resta:")
+
+print({4-2})
+
+print("primitiva_add1:")
+
+print(add1(2))
+
+print("primitiva_sub1:")
+
+print(sub1(2))
+
+print("primitiva_modulo:")
+
+print({4%2})
+
+print("primitivas_para_flotantes#######################################")
+
+print("primitiva_multiplicacion:")
+
+print({4.0*2.0})
+
+print("primitiva_divicion:")
+
+print({4.0/2.0})
+
+print("primitiva_suma:")
+
+print({4.0+2.0})
+
+print("primitiva_resta:")
+
+print({4.0-2.0})
+
+print("primitiva_add1:")
+
+print(add1(2.0))
+
+print("primitiva_sub1:")
+
+print(sub1(2.0))
+
+print("primitiva_modulo:")
+
+print({4.0%2.0})
+
+
+
+
+}}}
+
+punto #4
+
+GLOBALS{
+
+const int @x = 1
+
+}
+
+PROGRAM {
+main()
+
+{
+
+@x
+
+}}
+
+GLOBALS{
+
+const int @x = 1
+
+}
+
+PROGRAM {
+
+main()
+
+{
+
+set @x=0
+
+}}
+
+
+punto #3
+
+GLOBALS{
+
+var int @x = 1
+
+}
+
+PROGRAM {
+
+main()
+
+{
+
+BLOCK{
+
+set @x=0
+
+@x
+
+}}}
+
+
+punto #2
+
+GLOBALS{
+
+var int @a=1
+
+var float @b=1.0
+
+var graph @c=graph(vertex("a" "b" "c" "d") edges(edge("b" "a") edge("c" "d")))
+
+var String @d= "d"
+
+var String @e = "hola_mundo"
+
+var bool @f1 = true
+
+var bool @f2= false
+
+proc (int->int) @g= function (int @a) { {@a*@a} }
+
+var list<int> @h= make-list(1 2 3 4 5)
+
+var dict<String,int> @i=make-dict(make-list("hola" "mundo") make-list(1 2))
+
+var vector<int> @j1 = make-vec-zise(5 0)
+
+var vector<int> @j2 = make-vec(1 2 3 4 5)
+
+}
+
+PROGRAM
+
+{
+
+main()
+
+{
+
+BLOCK{
+
+print("Enteros:")
+
+print(@a)
+
+print("Flotantes: ")
+
+print(@b)
+
+print("Grafos_Dirigidos:")
+
+print(@c)
+
+print("Caracteres:")
+
+print(@d)
+
+print("Cadenas_de_caracteres:")
+
+print(@e)
+
+print("Booleanos:")
+
+print(@f1)
+
+print(@f2)
+
+print("Procedimientos:")
+
+print(@g)
+
+print("Listas")
+
+print(@h)
+
+print("Diccionarios:")
+
+print(@i)
+
+print("vectores")
+
+print(@j1)
+
+print(@j2)
+
+
+}
+}
+
+}
+
+punto #12
+
+;int!=bool
+
+GLOBALS{
+var int @x=true
+}
+PROGRAM{
+main()
+
+{
+
+@x
+
+}}
+
+;int!=float
+
+GLOBALS{
+var int @x=1.0
+}
+PROGRAM{
+main()
+
+{
+
+@x
+
+}}
+
+;list!=dict
+
+GLOBALS{
+
+var list<int> @d=make-dict(make-list("hola" "mundo") make-list(1 2))
+
+}
+PROGRAM{
+
+main()
+
+{
+
+@d
+
+}}
+
+;int!=list
+
+GLOBALS{
+
+var int @d=make-list(1 2 3)
+
+}
+PROGRAM{
+
+main()
+
+{
+
+@d
+
+}}
+
+;bool!=float
+GLOBALS{
+
+var bool @d=2.0
+
+}
+PROGRAM{
+
+main()
+
+{
+
+@d
+
+}}
+
+punto #11
+
+GLOBALS{
+
+proc (->(String -> (String * String  -> String))) @vehiculo = function()
+{
+
+LOCALS{
+
+var String @marca= "vacio"
+
+var String @modelo= "vacio"
+
+proc (String * String -> String) @inicialize=function (String @marca String @modelo)
+{
+BLOCK{
+set @marca=@marca
+
+set @modelo=@modelo
+
+"inicializado"
+}
+}$endInicialize
+
+proc (String * String->String) @getMarca=function(String @N String @N ){@marca}
+
+proc (String * String->String) @getModelo=function(String @N String @N ){@modelo}
+
+proc (String * String->String) @setMarca=function(String @marca String @N)
+
+{
+
+BLOCK{
+set @marca=@marca
+"succes"
+}
+
+}$endSetMarca
+
+proc (String * String->String) @setModelo=function(String @modelo String @N){
+
+BLOCK{
+
+set @modelo=@modelo
+"succes"
+
+}
+
+}$endSetModelo
+
+proc (String->(String * String->String)) @send=function(String @mensaje)
+
+{
+
+if {@mensaje == "inicialize"} then @inicialize
+else
+if {@mensaje == "getMarca"} then @getMarca
+else
+if {@mensaje == "getModelo"} then @getModelo
+else
+if{@mensaje == "setMarca"} then @setMarca
+else
+if{@mensaje == "setModelo"} then @setModelo
+
+}$endSend
+
+}
+@send
+{
+
+}$endLocalsVehiculo
+
+}$endVehiculo
+
+}$endGlobals
+
+PROGRAM
+{
+
+LOCALS{
+
+proc (String->(String*String->String)) @objeto= app(@vehiculo)
+}
+app(app(@objeto "inicialize") "toyota" "hilux")
+}$endProgram
+
+|#
+
+
+
