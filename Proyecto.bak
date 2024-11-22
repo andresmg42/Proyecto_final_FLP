@@ -13,8 +13,8 @@ INDICES DE BLOQUES DEL CODIGO
 6) ENVIRONMENTS-FUNTIONS
 7) AUXILIAR-FUNTIONS
 8) EXPRESSION-EVALUATOR
-
 |#
+
 ;;;;; Interpretador para lenguaje con condicionales y ligadura local
 
 ;; La definición BNF para las expresiones del lenguaje:
@@ -107,18 +107,23 @@ INDICES DE BLOQUES DEL CODIGO
     (expression ("const" type-exp identifier "=" expression ";") conts-exp)
     
     (expression 
-     
     (unary-primitive "(" expression ")")
      primapp-un-exp)
     
     (expression
-     ( "do (" expression 
-           primitiva-binaria expression   ")")
+     ( "app-prim(" expression 
+           primitiva-binaria expression ")")
      primapp-bin-exp)
 
     (expression
-     (make-primitive "(" expression expression ")")
-     primapp-make-exp)
+    (make-vector-primitive "(" (arbno expression)")")
+     primapp-make-vector-exp)
+
+    (expression (make-list-primitive "(" (arbno expression) ")")
+                primapp-make-list-exp)
+
+    (expression(make-dict-primitive "(" (arbno expression) ")")
+               primapp-make-dict-exp)
     
     (expression
      ("\"" text "\"" )
@@ -148,10 +153,10 @@ INDICES DE BLOQUES DEL CODIGO
       (arbno identifier "(" (separated-list identifier ",") ")" "=" expression)
         "in" expression) 
     letrec-exp)
-
-   ;PARTES DE LAS LISTAS
+  
+    ;PARTES DE LAS LISTAS
     (expression
-     ("(" (separated-list expression ",") ")" ";")
+     ("(" (separated-list expression ",") ")")
      list-exp)
 
     ;;Primitiva empty para representar una lista vacía
@@ -160,11 +165,11 @@ INDICES DE BLOQUES DEL CODIGO
      empty-list-exp)
 
     ;PARTES DE VECTORES
-    (expression ("["(separated-list expression ",")"]" ";") vect-exp)
+    (expression ("["(separated-list expression ",")"]" ) vect-exp)
 
     ;PARTES DE DICCIONARIOS
-    (expression ("{"(arbno "\"" text "\"" ":" expression ",") 
-                   "}"";") dict-exp)
+    (expression ("{"(separated-list  expression ":" expression ",") 
+                   "}") dict-exp)
 
     ;PARTES DE GRAFOS
     (expression ( "edges" "(" (arbno "(" identifier "," identifier ")" ) ")") edge-exp)
@@ -189,7 +194,15 @@ INDICES DE BLOQUES DEL CODIGO
     (primitiva-binaria ("<=") primitiva-menor-igual)
     (primitiva-binaria ("!=") primitiva-diferente)
     (primitiva-binaria ("==") primitiva-comparador-igual)
-    (primitiva-binaria("append" "(" identifier "," identifier ")")append-exp);;---------------------------
+    (primitiva-binaria("append") primitiva-append)
+    (primitiva-binaria("ref-vector")primitiva-ref-vector)
+    (primitiva-binaria("set-vector")primitiva-set-vector)
+    (primitiva-binaria("append-vector")primitiva-append-vector)
+    (primitiva-binaria("delete-val-pos")primitiva-delete-val-pos)
+    (primitiva-binaria("ref-dict")primitiva-ref-dict)
+    (primitiva-binaria("set-dict")primitiva-set-dict)
+    
+    ;;---------------------------
 
     
     ;unary-primitive-exp
@@ -201,12 +214,16 @@ INDICES DE BLOQUES DEL CODIGO
     (unary-primitive("list?") primitive-list)
     (unary-primitive("head") primitive-head)
     (unary-primitive("tail")primitive-tail)
-    ;(unary-primitive("make-list") primitive-make)
+    (unary-primitive("set-dict")primitive-set-dict)
+    (unary-primitive("keys-dict")primitive-keys-dict)
+    (unary-primitive("values-dict")primitive-values-dict)
 
-    ;make-primitives
-    (make-primitive ("make-list") make-list-primitive)
-    (make-primitive ("make-vector") make-vector-primitive)
-    (make-primitive ("make-dict") make-dict-primitive)
+    ;make-list-primitive
+    (make-list-primitive ("make-list") make-l-primitive)
+    
+    (make-vector-primitive ("make-vector") make-v-primitive)
+    
+    (make-dict-primitive ("make-dict") make-d-primitive)
     
     ;caracteristicas adicionales
     (type-exp ("list" "<" type-exp ">") list-type-exp)
@@ -251,12 +268,36 @@ INDICES DE BLOQUES DEL CODIGO
       (primitiva-menor-igual () (valor-verdad? (comparar (car args) (cadr args) '<=)))
       (primitiva-diferente () (valor-verdad? (not (eqv? (car args) (cadr args)))))
       (primitiva-comparador-igual () (valor-verdad? (equal? (car args) (cadr args))))
+      (primitiva-append() (if (not(and (list? (car args)) (list? (cadr args))))
+                              (append (extract-values-list (car args))
+                                      (extract-values-list (cadr args)))
+                              (append (car args) (cadr args))    
+                              )
+                       )
+      (primitiva-ref-vector()(if (vector? (car args))
+                                 (vector-ref (car args) (cadr args))
+                                 (vector-ref (extract-values-vec (car args))
+                                             (cadr args))
+                                 )
+                           )
+      (primitiva-set-vector()(if (vector? (car args))
+                                 (vector-set! (car args) (cadr args))
+                                 (let((vec (extract-values-vec (car args)))
+                                      (pos&val (extract-values-list (cadr args)))
+                                      )
+                                    (vector-set! vec (car pos&val) (cadr pos&val))
+                                    "cambio exitoso"
+                                     ) 
+                                 ))
+      (primitiva-append-vector()(vector-append (car args) (cadr args)))
+
+      (primitiva-delete-val-pos()(delete-val-pos (car args)(cadr args)))
       
-      (else "faltan casos bianrio")
- 
+      (primitiva-ref-dict() (ref-dict (car args) (cadr args)))
+
+      (primitiva-set-dict() (set-dict (car args) (cadr args)))
       
-      
-                       
+      (else "faltan casos bianrio")                 
       )))
 
 ;Funcion que resuelve las operaciones de cada primitiva unaria
@@ -270,23 +311,63 @@ INDICES DE BLOQUES DEL CODIGO
       (primitive-neg-boolean () (if (eqv? arg "true") "false"
                                     "true"))
       (primitive-empty () (valor-verdad? (equal? (car arg) "[]")))
-      (primitive-head () (car arg))
-      (primitive-tail () (cdr arg))
-      ;(primitive-make () ())
-      ;;falta primitive list?
+      
+      (primitive-head ()
+                      (if (list? arg)
+                          (car arg)
+                          (car (extract-values-list arg))
+                          ))
+      (primitive-tail ()
+                      (if (list? arg)
+                          (cdr arg)
+                          (cdr (extract-values-list arg))
+                          ))
+      
+      (primitive-keys-dict() (keys-dict arg))
+      (primitive-values-dict()(values-dict arg))
       (else "faltan casos unario")
       )))
 
 
-
-(define apply-make-primitive
-  (lambda (prim size value)
-    (cases make-primitive prim
-      (make-list-primitive () (make-sequence size value "list"))
-      (make-vector-primitive () (make-sequence size value "vector"))
-      (make-dict-primitive () "FALTA IMPLEMENTACION")
-      )
+(define apply-make-l-primitive
+  (lambda (prim args)
+    (cases make-list-primitive prim 
+      (make-l-primitive () (non-empty-list args))
     )
+  )
+)
+
+
+(define apply-make-v-primitive
+  (lambda args
+    (cases make-vector-primitive (car args)
+      (make-v-primitive()
+                       (if (= (length args) 3)
+                           (non-empty-vec (make-vector (cadr args) (caddr args)))
+                           (non-empty-vec (list->vector (cdr args)))
+                           )
+                       )
+      )   
+    )
+)
+
+(define apply-make-d-primitive
+  (lambda args
+    (cases make-dict-primitive (car args)
+       (make-d-primitive ()
+               (cond
+                    ((not(equal? (length args) 3)) "Not valid aplicattionfor make-dict")
+                    ((and(null? (cadr args)) (null? (caddr args)))
+                     (create-dict (list) (list)))
+                    ((and (not(null? (cadr args)))
+                          (not(null? (caddr args))))
+                     (create-dict (cadr args) (caddr args))
+                     )
+                    )
+
+       )
+    )    
+  )
 )
 
 ;----------------AUTOMATIC-SLLGEN-FUNTIONS-----------------------------
@@ -404,14 +485,13 @@ INDICES DE BLOQUES DEL CODIGO
   (lambda ()
     (empty-env-record)));llamado al constructor de ambiente vacío 
 
-
-;extend-env-recursively: <list-of symbols> <list-of <list-of symbols>> <list-of expressions> environment -> environment
-;función que crea un ambiente extendido para procedimientos recursivos
+;extend-env: <list-of symbol> <list-of symbol> <list-of expression>
 (define extend-env
   (lambda (syms vals env)
     (extended-env-record syms vals env))) 
 
-;extend-env: <list-of symbol> <list-of symbol> <list-of expression>
+;extend-env-recursively: <list-of symbols> <list-of <list-of symbols>> <list-of expressions> environment -> environment
+;función que crea un ambiente extendido para procedimientos recursivos
 (define extend-env-recursively
   (lambda (proc-names idss bodies old-env)
     (recursively-extended-env-record
@@ -522,62 +602,150 @@ INDICES DE BLOQUES DEL CODIGO
     (if bool "true" "false")))
 
 
+;-------------------------LISTAS---------------------------------------
+(define-datatype lista lista?
+  (empty-list)
+  (non-empty-list (values list?))
+)
 
-;Funcion que retorna un string que representa la estructura de listas
-;definida en la gramatica, de tamaño n e inicializadas con valores v
-;make-list: number x valor => string
-;usage: (make-list n v) => string [v1,v2,v3.......v2]
-(define make-sequence
-  (lambda (size value idetifier)
-    (if (= size 0) "[]"
-        (cond
-          ((equal? idetifier "list")
-           (string-append  "(" (separator-comma size value) ");" ))
-          ((equal? idetifier "vector")
-           (string-append  "[" (separator-comma size value) "];" ))
-          )
+(define extract-values-list
+  (lambda (l1)
+    (cases lista l1
+      (empty-list()(list))
+      (non-empty-list (values) values))
+  )
+)
+
+;-------------------------VECTORES---------------------------------
+(define-datatype vec vec?
+  (empty-vec)
+  (non-empty-vec (values vector?))
+)
+
+(define extract-values-vec
+  (lambda (vector)
+    (cases vec vector
+      (empty-vec()( #() ))
+      (non-empty-vec (values) values))
+  )
+)
+
+(define vector-append
+  (lambda (vector value)
+    (let((l1 (vector->list (extract-values-vec vector)))
+         (l2 (list value)))
+      (list->vector (append l1 l2))
         )
   )
 )
 
-;Funcion que retorna un string separado por comas
-;separator-comma: int x valor => string
-;usage: (separator-comma n v) => string v1,v2,v3,.....v4
-(define separator-comma
-  (lambda (n v)
-    (if (= n 1) (convert-to-string v)
-        (string-append (convert-to-string v) ","
-                       (separator-comma (- n 1) v))
-        )    
+(define delete-val-pos
+  (lambda (vector pos)
+    (let((delete-value (vector-ref (extract-values-vec vector) pos))
+         (lista (vector->list(extract-values-vec vector))))
+      (list->vector (delete-val-list lista delete-value))
+        )
   )
 )
 
-;Funcion que retorna la concatenacion de 2 valores
-;concat: a x b => String
-;usage: (concat a  b) => String ab
-#|(define concatenar
-  (lambda (a b)
+(define delete-val-list
+  (lambda (lista value)
     (cond
-      ((and (not(string? a)) (not(string? b)))
-       (string-append (convert-to-string a) (convert-to-string b)))
-      ((and (string? a) (not(string? b)))
-       (string-append a (convert-to-string b)))
-      ((and (not(string? a)) (string? b))
-       (string-append (convert-to-string a) b))
-      (else (string-append a b))
-    )
+      ((null? lista) empty)
+      ((not(= (car lista) value))
+       (cons (car lista) (delete-val-list (cdr lista) value)))
+      ((and (= (car lista) value) (not(null? (cdr lista))))
+       (cons (cadr lista) (delete-val-list (cddr lista) value))
+       )
+      (else empty)
+     )
   )
 )
+
+;----------------FUNCIONES PARA LOS DICCIONARIOS--------------------
+(define-datatype dictionary dictionary?
+  (empty-dict)
+  (non-empty-dict (keys list)
+                  (values vector?))
+)
+
+(define create-dict
+  (lambda (keys values)
+    (let((keys1 (extract-values-list keys))
+         (values1 (extract-values-vec values))
+         )
+      (if (and (null? keys1) (= (vector-length values1)) 0)
+        (empty-dict) 
+        (non-empty-dict keys1 values1))
+        )
+   )
+)
+
+
+
+(define keys-dict
+  (lambda (dict)
+    (cases dictionary dict
+      (empty-dict() "{}")
+      (non-empty-dict (keys values)
+                       keys)
+      )
+  )
+)
+
+(define values-dict
+  (lambda (dict)
+    (cases dictionary dict
+      (empty-dict() "{}")
+      (non-empty-dict (keys values)
+                      values)
+      )
+  )
+)
+
+(define list-find-position-s
+  (lambda (str los) 
+    (list-index-s (lambda (str1) (string=? str1 str)) los)))
+
+(define list-index-s
+  (lambda (pred ls)
+    (cond
+      ((null? ls) #f)                              ; Si la lista está vacía, retorna #f
+      ((pred (car ls)) 0)                          ; Si el predicado se cumple para el primer elemento, retorna 0
+      (else (let ((list-index-r (list-index pred (cdr ls)))) ; Llama recursivamente para el resto de la lista
+              (if (number? list-index-r) 
+                  (+ list-index-r 1)                 ; Suma 1 si se encontró el índice
+                  #f))))))                             ; Retorna #f si no se encontró el índice
+
+
+(define ref-dict
+  (lambda(dict key)    
+    (let((pos (list-find-position-s key (keys-dict dict)))
+         (vec-values (values-dict dict)))
+      (vector-ref vec-values pos)
+      )
+  )
+)
+
+
+#|
+recibe
+diccionario
+clave
+valor a cambiar
 |#
 
-#|(define conver-to-ASCII
-  (lambda(palabra)
-    (map char->integer (string->list palabra))
-  )
-)|#
-
-
-
+(define set-dict
+  (lambda (dict values)
+    (let((pos (list-find-position-s (car (extract-values-list values)) (keys-dict dict)))
+         (vec-values (values-dict dict))
+         )
+      (vector-set! vec-values pos (cadr (extract-values-list values)))
+      "cambio exitoso"
+      )
+    )
+)
+  
 ;----------------EXPRESSION-EVALUATOR----------------------------------
 
 
@@ -591,9 +759,10 @@ INDICES DE BLOQUES DEL CODIGO
       (lit-float-exp (datum) datum)
       (var-exp (id) (apply-env env id))
       (text-exp (text) text)
-      (true-exp () "true")
-      (false-exp () "false")
-      (empty-list-exp () "[]")
+      (true-exp () #t)
+      (false-exp () #f)
+      (empty-list-exp () (list))
+      
       (primapp-un-exp (prim rand)
                   (let ((arg (eval-expression rand env)))
                    (apply-unary-primitive prim arg)))
@@ -603,14 +772,38 @@ INDICES DE BLOQUES DEL CODIGO
                         (arg2 (eval-expression exp2 env)))
                     (apply-primitive-bin prim (list arg1 arg2))))
 
-      (primapp-make-exp(prim arg1 arg2)
-                  (let(
-                       (size (eval-expression arg1 env))
-                       (value (eval-expression arg2 env))
-                       )
-                    (apply-make-primitive prim size value)
+      (primapp-make-list-exp(prim args)
+                    (let((lista (eval-rands args env))  
+                         )                    
+                          (apply-make-l-primitive prim lista)
                       )
-       )
+                    )                           
+      
+      
+      (primapp-make-vector-exp(prim args)
+                  (cond
+                      ((= (length args) 2)
+                      (let(
+                          (size (eval-expression (car args) env))
+                          (value (eval-expression (cadr args) env))
+                          )
+                      (apply-make-v-primitive prim size value)
+                      ))                      
+                      (else
+                       (apply-make-v-primitive prim (eval-rands args env)))
+                  )            
+                  
+      )
+
+      (primapp-make-dict-exp (prim args)                                 
+                         (let((keys (eval-expression (car args) env))
+                              (values (eval-expression (cadr args) env)))
+                           (apply-make-d-primitive prim keys values)
+                             )
+                             
+      )
+      
+
       (if-exp(test-exp true-exp false-exp)
              (if(true-value? (eval-expression test-exp env))
                 (eval-expression true-exp env)
@@ -638,9 +831,25 @@ INDICES DE BLOQUES DEL CODIGO
                   (eval-expression letrec-body
                                    (extend-env-recursively proc-names ids proc-bodies env))
                   )
-      ;;faltan algunos cambios----------------------------
+      
       (list-exp (args)
-                (eval-rands args env))
+                (if (null? (eval-rands args env))
+                    (empty-list)
+                    (non-empty-list (eval-rands args env))
+                    )
+                )
+
+      (vect-exp (args)
+                (if (null? (eval-rands args env))
+                    (empty-vec)
+                    (non-empty-vec (list->vector (eval-rands args env)))
+                    )
+                )
+
+      (dict-exp (keys values)                
+                (non-empty-dict (eval-rands keys env)
+                                (list->vector (eval-rands values env)))
+                )
 
       (else "faltan casos eval-expression")
       )    
@@ -651,100 +860,39 @@ INDICES DE BLOQUES DEL CODIGO
 
 ;-----------------------------------------------------------------------------------------------
 #|
-PUNTOS DEL TALLER
-a) sumarDigitos
-
-La funcion @modulo calcula el resto de divir un numero entre otro
-@modulo: number x number => number
-usage: eval @modulo(@a,@b) finalEval => residuo de dividir @a entre @b
-
-La funcion @divEntera calcula la division entera entre 2 numero
-@divEnt: number x number => number
-usage: eval @divEntera(@a,@b) finalEval => resultado entero de divir @a entre @b
-
-La funcion @sumarDigitos suma los digitos de una numero dado
-@sumarDigitos: number => number
-usage: eval @sumarDititos(@a) finalEval => resultado de sumar lo digitos de @a
-
-letrec @modulo(@n,@m)= Si (@n<@m) {@n} sino {eval @modulo((@n~@m),@m) finalEval}
-@divEntera(@t,@r)= ((@t/@r) ~ (eval @modulo (@t,@r) finalEval / @r))
-@sumarDigitos(@h)= Si (@h==0) {0} sino 
-{(eval @modulo (@h,10) finalEval + eval@sumarDigitos(eval @divEntera (@h,10) finalEval) finalEval)}
-in
-eval @sumarDigitos (147) finalEval
-----------------------------------------------------------------------------------------
-b)
-Funcion que retorna el factorial de un numero n
-@fact: number => number
-usage: eval @fact(@n) finalEval => factorial de @n
-
-Factorial de 5
-letrec
-@fact(@x)= Si (@x == 0) {1} sino {(@x * eval @fact((@x ~ 1)) finalEval)}
-in
-eval @fact(5) finalEval
+EJEMPLOS PARA PROBAR LAS FUNCIONES (INTERPRETADOR)
+-------------------CONSTRUCCIONES------------------------------------------------------
 
 
-Factorial de 10
+lista inicializada------------------------make-list(1 2 3 4 5)
+vector de tamaño n y valor v -------------make-vector(10 0)
+vector inicializado diferentes valores----make-vector(1 2 3 4 5)
+crear un diccionario----------------------make-dict(("daniel")[20])
 
-letrec
-@fact(@x)= Si (@x == 0) {1} sino {(@x * eval @fact((@x ~ 1)) finalEval)}
-in
-eval @fact(10) finalEval
 
-----------------------------------------------------------------------------------------
-c) Potencia
+*********************funciones de las listas***************************
 
-Funcion que calcula la potencia de un numero a elevado a la potencia b
-@potencia: number x number => number
-usage: eval @potencia(@a,@b) finalEval => a elevado a la b
-
-letrec
-@potencia(@a,@b) = Si (@b == 1) {@a} sino
-                      {Si (@b == 0) {1} sino
-                           {(@a * eval @potencia(@a,(@b ~ 1)) finalEval)}} 
-in
-eval @potencia(4,2) finalEval
------------------------------------------------------------------------------------------
-d) SumarRango
-
-Funcion que retorna la suma de los numeros en un rango positivo
-@sumRan: number x number => number
-usage: eval @sumRan(@a,@b) => suma de los numeros desde @a hasta @b
-
-letrec
-@sumRan(@a,@b) = Si (@a == @b) {@a} sino {(@a + eval @sumRan((@a + 1),@b) finalEval)}
-in
-eval @sumRan(2,5) finalEval
-
------------------------------------------------------------------------------------------
-e) Decorators
-
-Funcion decoradora que retorna hola al inicio de un string
-@saludar: procedure => String
-usage: eval @decorate() finalEval => "hola:Algun_string"
-
-declarar(
-@integrantes = procedure(){"Andres_Y_Daniel"};
-@saludar = procedure(@noms){procedure(){("Hola: " concat eval @noms() finalEval)}};
-){
-declarar(@decorate = eval @saludar(@integrantes) finalEval;)
-{eval @decorate()  finalEval}}
+head-----------------head((1,2,3))
+tail-----------------tail((1,2,3))
+append---------------app-prim((1,2,3) append (4,5,6))
 
 
 
-f)
-Funcion decoradora que recibe un string y lo agregar al final del otro string
-@decorate: string => string
-usage: @decorate(mensaje) => "algun_stringmensaje"
+********************funciones de vectores*****************************
 
-declarar(
-@integrantes = procedure(){"Andres_Y_Daniel"};
-@saludar = procedure(@noms){procedure(){("Hola: " concat eval @noms() finalEval)}};
-){
-declarar(@evaluado = eval @saludar(@integrantes) finalEval;)
-{
-declarar(@decorate = procedure(@mensaje){
-(eval @evaluado() finalEval concat @mensaje)};)
-{eval @decorate("Estudiantes_de_FLP") finalEval}}}
+ref-vector-------------------------app-prim([1,2,3,4,5] ref-vector 4)
+set-vector-------------------------app-prim([1,2,3,4] set-vector (1,99))
+append-vector----------------------app-prim([1,2,3] append-vector 2 )
+delete-val-vector[pos]-------------app-prim([1,2,3,4,5] delete-val-pos 1)
+
+
+
+********************funciones de diccionarios*************************
+
+ref-dict---------app-prim({"daniel":20,"andres":29} ref-dict "daniel")
+keys-dict--------keys-dict({"daniel":20,"andres":29})
+values-dict------values-dict({"daniel":20,"andres":29})
+set-dict---------app-prim({"daniel":20,"andres":29} set-dict ("daniel",99))
+
+
 |#
