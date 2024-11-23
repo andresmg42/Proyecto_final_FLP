@@ -275,11 +275,11 @@
       (primitive-values-dict () (vector->list (cadr (car arg))))
       ;grafos
       (primitive-graph () (graph-exp (car arg) (cadr arg)))
-      (primitive-vertex () (vertices-exp (map string->symbol (vector->list (car arg)))))
-      (primitive-edges () (edges-exp (vector->list (car arg))))
+      (primitive-vertex () (vertices-exp (map string->symbol arg)))
+      (primitive-edges () (edges-exp arg))
       (primitive-edge () (edge-exp (string->symbol  (car arg)) (string->symbol (cadr arg))))
-      (primitive-get-edges () (cases g-exp (car arg) (graph-exp (v e) (cases es-exp e (edges-exp (l) (list->vector l))))))
-      (primitive-get-vertex () (cases g-exp (car arg) (graph-exp (v e) (cases vs-exp v (vertices-exp (l) (list->vector (map symbol->string l)))))))
+      (primitive-get-edges () (cases g-exp (car arg) (graph-exp (v e) e)))
+      (primitive-get-vertex () (cases g-exp (car arg) (graph-exp (v e) v)))
       (primitive-add-edge () (add-edge (car arg) (cadr arg)))
       (primitive-vecinos-entrantes () (map symbol->string (vecinos-entrantes (car arg) (string->symbol (cadr arg)))))
       (primitive-vecinos-salientes () (map symbol->string (vecinos-salientes (car arg) (string->symbol (cadr arg)))))
@@ -940,15 +940,15 @@
 
       (primitive-graph() (proc-type  (list vertex-type edges-type) graph-type))
       
-      (primitive-vertex () (proc-type (if  (cases type typ (vector-type (t) (equal? t   string-type)) (else (type-error arg-types))) arg-types (type-error arg-types)) vertex-type))
+      (primitive-vertex () (proc-type (if (and (equal? typ string-type) (equal-types? arg-types)) arg-types (type-error arg-types)) vertex-type))
 
-      (primitive-edges () (proc-type (if  (cases type typ (vector-type (t) (equal? t   edge-type)) (else (type-error arg-types))) arg-types (type-error arg-types)) edges-type))
+      (primitive-edges () (proc-type (if (and (equal? typ edge-type) (equal-types? arg-types)) arg-types (type-error arg-types)) edges-type))
 
       (primitive-edge () (proc-type (if (and (equal? typ string-type) (equal-types? arg-types) (equal? (length arg-types) 2)) arg-types (type-error arg-types)) edge-type))
 
-      (primitive-get-edges () (proc-type (list graph-type) (vector-type edge-type)))
+      (primitive-get-edges () (proc-type (list graph-type) edges-type))
 
-      (primitive-get-vertex () (proc-type (list graph-type) (vector-type string)))
+      (primitive-get-vertex () (proc-type (list graph-type) vertex-type))
 
       (primitive-add-edge () (proc-type (list graph-type edge-type) graph-type))
 
@@ -3289,112 +3289,9 @@ print(app(@moto1 "getMarca"))
 print("Modelo:")
 print(app(@moto1 "getModelo"))
 
-print("atributos_iniciales_objeto2")
-
-print("atributos:")
-
-print("Cilindrada:")
-print(app(@moto2 "getCilindrada"))
-print("Marca:")
-print(app(@moto2 "getMarca"))
-print("Modelo:")
-print(app(@moto2 "getModelo"))
-
-print("seteando_atributos::::::::::::::::::")
-
-app(app(@moto2 "setCilindrada") 400)
-app(app(@moto2 "setMarca") "KTM")
-app(app(@moto2 "setModelo") "ducke")
-
-print("nuevos_atributos:")
-
-print("Cilindrada:")
-print(app(@moto2 "getCilindrada"))
-print("Marca:")
-print(app(@moto2 "getMarca"))
-print("Modelo:")
-print(app(@moto2 "getModelo"))
-
-print("atributos_iniciales_objeto3")
-
-print("atributos:")
-
-print("Cilindrada:")
-print(app(@moto3 "getCilindrada"))
-print("Marca:")
-print(app(@moto3 "getMarca"))
-print("Modelo:")
-print(app(@moto3 "getModelo"))
-
-print("seteando_atributos::::::::::::::::::")
-
-app(app(@moto3 "setCilindrada") 500)
-app(app(@moto3 "setMarca") "SSS")
-app(app(@moto3 "setModelo") "xvs")
-
-print("nuevos_atributos:")
-
-print("Cilindrada:")
-print(app(@moto3 "getCilindrada"))
-print("Marca:")
-print(app(@moto3 "getMarca"))
-print("Modelo:")
-print(app(@moto3 "getModelo"))
 }}}
 
-#punto 13
 
-GLOBALS
-{
-
-proc vertex @joinVertex=function( vertex v1 vertex v2)
-{
-
-
-}
-
-
-proc graph @GraphUnion=function(graph @g1 graph @g2)
-{
-
-LOCALS{
-
-var vertex @vg1_list=get-vertex(@g1)
-
-var vertex @vg2_list=get-vertex(@g2)
-
-
-
-
-}{
-
-}
-
-}$endGraphUnion
-
-}$endGlobals
-
-PROGRAM
-{
-
-LOCALS{
-var graph @g1=graph(vertex ( a b c e) egdges(edge( a b) edge(c e)))
-
-var graph @g2=graph(vertex (c e x y) edges(edge(c e) edge(x y)))
-}
-{
-
-}
-
-}$endProgram
-
-GLOBALS{
-
-var vertice @v=vertice(make-vec("a" "b" "c"))
-} PROGRAM
-{
-@v
-}
 |#
 
 

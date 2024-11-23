@@ -275,11 +275,11 @@
       (primitive-values-dict () (vector->list (cadr (car arg))))
       ;grafos
       (primitive-graph () (graph-exp (car arg) (cadr arg)))
-      (primitive-vertex () (vertices-exp (map string->symbol (vector->list (car arg)))))
-      (primitive-edges () (edges-exp (vector->list (car arg))))
+      (primitive-vertex () (vertices-exp (map string->symbol (car arg))))
+      (primitive-edges () (edges-exp (car arg)))
       (primitive-edge () (edge-exp (string->symbol  (car arg)) (string->symbol (cadr arg))))
-      (primitive-get-edges () (cases g-exp (car arg) (graph-exp (v e) (cases es-exp e (edges-exp (l) (list->vector l))))))
-      (primitive-get-vertex () (cases g-exp (car arg) (graph-exp (v e) (cases vs-exp v (vertices-exp (l) (list->vector (map symbol->string l)))))))
+      (primitive-get-edges () (cases g-exp (car arg) (graph-exp (v e) (cases es-exp e (edges-exp (l) l)))))
+      (primitive-get-vertex () (cases g-exp (car arg) (graph-exp (v e) (cases vs-exp v (vertices-exp (l) (map symbol->string l))))))
       (primitive-add-edge () (add-edge (car arg) (cadr arg)))
       (primitive-vecinos-entrantes () (map symbol->string (vecinos-entrantes (car arg) (string->symbol (cadr arg)))))
       (primitive-vecinos-salientes () (map symbol->string (vecinos-salientes (car arg) (string->symbol (cadr arg)))))
@@ -940,15 +940,15 @@
 
       (primitive-graph() (proc-type  (list vertex-type edges-type) graph-type))
       
-      (primitive-vertex () (proc-type (if  (cases type typ (vector-type (t) (equal? t   string-type)) (else (type-error arg-types))) arg-types (type-error arg-types)) vertex-type))
+      (primitive-vertex () (proc-type (list (list-type string-type)) vertex-type))
 
-      (primitive-edges () (proc-type (if  (cases type typ (vector-type (t) (equal? t   edge-type)) (else (type-error arg-types))) arg-types (type-error arg-types)) edges-type))
+      (primitive-edges () (proc-type (list (list-type edge-type)) edges-type))
 
       (primitive-edge () (proc-type (if (and (equal? typ string-type) (equal-types? arg-types) (equal? (length arg-types) 2)) arg-types (type-error arg-types)) edge-type))
 
-      (primitive-get-edges () (proc-type (list graph-type) (vector-type edge-type)))
+      (primitive-get-edges () (proc-type (list graph-type) (list-type edge-type)))
 
-      (primitive-get-vertex () (proc-type (list graph-type) (vector-type string)))
+      (primitive-get-vertex () (proc-type (list graph-type) (list-type string-type)))
 
       (primitive-add-edge () (proc-type (list graph-type edge-type) graph-type))
 
@@ -3289,85 +3289,61 @@ print(app(@moto1 "getMarca"))
 print("Modelo:")
 print(app(@moto1 "getModelo"))
 
-print("atributos_iniciales_objeto2")
-
-print("atributos:")
-
-print("Cilindrada:")
-print(app(@moto2 "getCilindrada"))
-print("Marca:")
-print(app(@moto2 "getMarca"))
-print("Modelo:")
-print(app(@moto2 "getModelo"))
-
-print("seteando_atributos::::::::::::::::::")
-
-app(app(@moto2 "setCilindrada") 400)
-app(app(@moto2 "setMarca") "KTM")
-app(app(@moto2 "setModelo") "ducke")
-
-print("nuevos_atributos:")
-
-print("Cilindrada:")
-print(app(@moto2 "getCilindrada"))
-print("Marca:")
-print(app(@moto2 "getMarca"))
-print("Modelo:")
-print(app(@moto2 "getModelo"))
-
-print("atributos_iniciales_objeto3")
-
-print("atributos:")
-
-print("Cilindrada:")
-print(app(@moto3 "getCilindrada"))
-print("Marca:")
-print(app(@moto3 "getMarca"))
-print("Modelo:")
-print(app(@moto3 "getModelo"))
-
-print("seteando_atributos::::::::::::::::::")
-
-app(app(@moto3 "setCilindrada") 500)
-app(app(@moto3 "setMarca") "SSS")
-app(app(@moto3 "setModelo") "xvs")
-
-print("nuevos_atributos:")
-
-print("Cilindrada:")
-print(app(@moto3 "getCilindrada"))
-print("Marca:")
-print(app(@moto3 "getMarca"))
-print("Modelo:")
-print(app(@moto3 "getModelo"))
 }}}
 
-#punto 13
+
+#13 grafos
+
+A)
 
 GLOBALS
 {
 
-proc vertex @joinVertex=function( vertex v1 vertex v2)
+proc (list<String> * String -> int) @buscarElemento=function(list<String> @l String @s)
 {
+if empty?(@l) then 0
+else
+{if {head(@l)==@s} then 1 else 0 + app(@buscarElemento tail(@l) @s)}
+}
 
+proc (list<String>*list<String> -> list<String>) @joinVertex=function( list<String> @v1 list<String> @v2)
+{
+if empty?(@v2) then @v1
+else
+if {app(@buscarElemento @v1 head(@v2)) > 0} then app(@joinVertex @v1 tail(@v2)) else app(@joinVertex append-list(@v1 make-list(head(@v2))) tail(@v2))
 
 }
 
+proc (list<edge> * edge -> int) @buscarElementoEdge=function(list<edge> @l edge @s)
+{
+if empty?(@l) then 0
+else
+{if {head(@l)==@s} then 1 else 0 + app(@buscarElementoEdge tail(@l) @s)}
+}
 
-proc graph @GraphUnion=function(graph @g1 graph @g2)
+proc (list<edge>*list<edge> -> list<edge>) @joinEdges=function( list<edge> @v1 list<edge> @v2)
+{
+if empty?(@v2) then @v1
+else
+if {app(@buscarElementoEdge @v1 head(@v2)) > 0} then app(@joinEdges @v1 tail(@v2)) else app(@joinEdges append-list(@v1 make-list(head(@v2))) tail(@v2))
+
+}
+
+proc (graph*graph->graph) @GraphUnion=function(graph @g1 graph @g2)
 {
 
 LOCALS{
 
-var vertex @vg1_list=get-vertex(@g1)
+var list<String> @vg1list=get-vertex(@g1)
 
-var vertex @vg2_list=get-vertex(@g2)
+var list<String> @vg2list=get-vertex(@g2)
 
+var list<edge> @eg1list=get-edges(@g1)
 
-
+var list<edge> @eg2list=get-edges(@g2)
 
 }{
-
+graph(vertex(app(@joinVertex @vg1list @vg2list)) edges(app(@joinEdges @eg1list @eg2list)))
 }
 
 }$endGraphUnion
@@ -3378,23 +3354,85 @@ PROGRAM
 {
 
 LOCALS{
-var graph @g1=graph(vertex ( a b c e) egdges(edge( a b) edge(c e)))
+var graph @g1=graph(vertex ( make-list("a" "b" "c" "e")) edges(make-list(edge( "a" "b") edge("c" "e"))))
 
-var graph @g2=graph(vertex (c e x y) edges(edge(c e) edge(x y)))
+var graph @g2=graph(vertex ( make-list("a" "b" "x" "y")) edges(make-list(edge( "a" "b") edge("x" "y"))))
 }
 {
-
+app(@GraphUnion @g1 @g2)
 }
 
 }$endProgram
 
-GLOBALS{
+B)
 
-var vertice @v=vertice(make-vec("a" "b" "c"))
-} PROGRAM
+GLOBALS
 {
-@v
+
+proc (list<String> * String -> int) @buscarElemento=function(list<String> @l String @s)
+{
+if empty?(@l) then 0
+else
+{if {head(@l)==@s} then 1 else 0 + app(@buscarElemento tail(@l) @s)}
 }
+
+proc (list<String>*list<String>*list<String> -> list<String>) @intVertex=function( list<String> @v1 list<String> @v2 list<String> @v1v2)
+{
+if empty?(@v2) then @v1v2
+else 
+if {app(@buscarElemento @v1 head(@v2))>0} then app(@intVertex @v1 tail(@v2) append-list(@v1v2 make-list(head(@v2)))) 
+else app(@intVertex @v1 tail(@v2) @v1v2)
+}
+
+proc (list<edge> * edge -> int) @buscarElementoEdge=function(list<edge> @l edge @s)
+{
+if empty?(@l) then 0
+else
+{if {head(@l)==@s} then 1 else 0 + app(@buscarElementoEdge tail(@l) @s)}
+}
+
+proc (list<edge>*list<edge>*list<edge> -> list<edge>) @intEdges=function( list<edge> @v1 list<edge> @v2 list<edge> @interseccionE)
+{
+if empty?(@v2) then @interseccionE
+else
+if {app(@buscarElementoEdge @v1 head(@v2)) > 0} then app(@intEdges @v1 tail(@v2) append-list(@interseccionE make-list(head(@v2)))) else app(@intEdges @v1 tail(@v2) @interseccionE)
+
+}
+
+proc (graph*graph->graph) @GraphIntersection=function(graph @g1 graph @g2)
+{
+
+LOCALS{
+
+var list<String> @vg1list=get-vertex(@g1)
+
+var list<String> @vg2list=get-vertex(@g2)
+
+var list<edge> @eg1list=get-edges(@g1)
+
+var list<edge> @eg2list=get-edges(@g2)
+
+}{
+graph(vertex(app(@intVertex @vg1list @vg2list make-list((String)))) edges(app(@intEdges @eg1list @eg2list make-list((edge)))))
+}
+
+}$endGraphIntersection
+
+}$endGlobals
+
+PROGRAM
+{
+
+LOCALS{
+var graph @g1=graph(vertex ( make-list("a" "b" "c" "e")) edges(make-list(edge( "a" "b") edge("c" "e"))))
+
+var graph @g2=graph(vertex ( make-list("a" "b" "x" "y")) edges(make-list(edge( "a" "b") edge("x" "y"))))
+}
+{
+app(@GraphIntersection @g1 @g2)
+}
+
+}$endProgram
 |#
 
 
