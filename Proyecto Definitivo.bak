@@ -173,7 +173,7 @@ INDICES DE BLOQUES DEL CODIGO
     (flotante
      ("-" digit (arbno digit) "." digit (arbno digit)) number)
     (text
-     (letter (arbno (or letter digit "_" ":" "." "?"))) string)
+     (letter (arbno (or letter digit "_" ":"))) string)
     ))
 
 ;Especificación Sintáctica (gramática)
@@ -196,7 +196,7 @@ INDICES DE BLOQUES DEL CODIGO
      ( "app-b" "(" expression 
                   primitiva-binaria (arbno expression) ")")
      primapp-bin-exp)
-    ;add1(2)
+    
     (expression
      ("\"" text "\"" )
      text-exp)
@@ -255,7 +255,7 @@ INDICES DE BLOQUES DEL CODIGO
 
     (expression ( "vers" "(" (separated-list identifier ",") ")") vertices-g-exp)
 
-    (expression ( "graph" "(" expression "," expression ")") graph-g-exp)
+    (expression ( "graph" "(" expression "," expression ")" ";") graph-g-exp)
 
 
     (expression ("BLOCK" "{" expression (arbno expression )"}")
@@ -274,7 +274,6 @@ INDICES DE BLOQUES DEL CODIGO
                 switch-exp )
 
     (expression ("print" "(" expression ")" ) print-exp)
-
     
     ; binary-Primitive-exp
     (primitiva-binaria ("+") primitiva-suma)
@@ -334,7 +333,6 @@ INDICES DE BLOQUES DEL CODIGO
     (type-exp ("edges")  edges-type-exp)
     (type-exp ("vertices") vertices-type-exp)
     (type-exp ("graph")graph-type-exp)
-    (type-exp ("list<generic>") generic-list-type)
     (type-exp ("list<int>") list-int-type)
     (type-exp ("list<float>") list-float-type)
     (type-exp ("list<bool>") list-bool-type)
@@ -427,11 +425,7 @@ INDICES DE BLOQUES DEL CODIGO
                               ((not(and (list? (car args)) (list? (cadr args))))
                               (non-empty-list (append (extract-values-list (car args))
                                                       (extract-values-list (cadr args)))))
-     
-                              (else
-                               (eopl:error "Valores no validos para appens ~s y ~s"
-                                           (car args)
-                                           (cadr args)))
+                              (else(non-empty-list (append (car args) (cadr args))))    
                               )
                        )
       (primitiva-ref-vector()(if (vector? (car args))
@@ -479,12 +473,9 @@ INDICES DE BLOQUES DEL CODIGO
                           
                           ((lista? arg)
                            (cases lista arg
-                           (empty-list ()empty-list)
-                           (non-empty-list (l) (non-empty-list (list l))))
-                           )
-                          
-                          ((or (number? arg) (string? arg) (symbol? arg))
-                           
+                             (empty-list() (empty-list))
+                             (non-empty-list (l) l)))
+                          ((or (number? arg) (string? arg))
                            (non-empty-list (list arg)))
                           (else "not valid argument")
                           )
@@ -511,32 +502,27 @@ INDICES DE BLOQUES DEL CODIGO
                            )
                           )
                         )
-
-
-            (make-g-primitive()
+      
+      (make-g-primitive()
                        (if (> (length arg) 2)
                            (eopl:error "the expected number of arguments does not ~%
                                         match the given number~%
                                         expectend: 2~% given: ~s" (length arg))
                            (if (valid-rands-for-graph? (car arg)(cadr arg))
                                (if (and (lista? (car arg)) (lista? (cadr arg)))
-                                   (create-graph (delete-duplicates (extract-values-list (car arg)))
-                                                 (delete-duplicates (extract-values-list (cadr arg))))
-                               
-                                   (create-graph (delete-duplicates (extract-vertices (car arg)))
-                                                 (delete-duplicates (extract-edges (cadr arg))))
+                                   (graph-exp (vertices-exp(extract-values-list (car arg)))
+                                               (edges-exp (convert-to-edges (extract-values-list (cadr arg)))))  
+                                   (graph-exp (car arg) (cadr arg))
                                    )
-
+                               
                                "Not valid aplication for make-graph"
                                )
                            )
                        )
-
-    
+      
       (primitiva-edges () (if (g-exp?  arg)
                               (cases g-exp arg
-                                (graph-exp (vs es) (non-empty-list (extract-edges es))))
-                                                    
+                                (graph-exp (vs es) es))
                               (if (list?  arg)
                                   (caddr arg)
                                   "Is not a graph"
@@ -546,7 +532,7 @@ INDICES DE BLOQUES DEL CODIGO
 
       (primitiva-vertices () (if (g-exp?  arg)
                               (cases g-exp arg
-                                (graph-exp (vs es) (non-empty-list (extract-vertices vs))))
+                                (graph-exp (vs es) vs))
                               (if (list?  arg)
                                   (cadr arg)
                                   "Is not a graph"
@@ -612,17 +598,12 @@ INDICES DE BLOQUES DEL CODIGO
   (sllgen:make-string-scanner scanner-spec-simple-interpreter grammar-simple-interpreter))
 
 ;El Interpretador (FrontEnd + Evaluación + señal para lectura )
-(define interpretador-sin-tipos
-  (sllgen:make-rep-loop  "--> "
-                         (lambda (pgm) (eval-program pgm)) 
-                         (sllgen:make-stream-parser 
-                          scanner-spec-simple-interpreter
-                          grammar-simple-interpreter)))
-
 (define interpretador
   (sllgen:make-rep-loop  "--> "
-                         (lambda (pgm) (begin (type-of-program pgm)
-                                              (eval-program pgm))) 
+                         (lambda (pgm) (begin
+                                         (type-of-program  pgm)
+                                         (eval-program pgm)
+                                         )) 
                          (sllgen:make-stream-parser 
                           scanner-spec-simple-interpreter
                           grammar-simple-interpreter)))
@@ -1078,54 +1059,11 @@ INDICES DE BLOQUES DEL CODIGO
   (edge-exp (sym-left symbol?)
             (sym-right symbol?)))
 
-
-;delete-duplicates <list-of string> -> <list-of string>
-;Funcion que elimina los elementos duplicados de una lista
-(define delete-duplicates
-  (lambda (l)
-    (if (null? l)
-        (list)
-        (let((remainder-list (delete-duplicates (cdr l))))
-          (if (member (car l) remainder-list)
-              remainder-list
-              (cons (car l) remainder-list)
-              )
-          )
-        )
-    ) 
-  )
-
-;create-graph <list-of symbols> <list-of <list-ofsymbols>> -> graph-exp
-;Funcion que recibe 2 listas una de los vertices y otra de las aristas, verifica
-;si las aristas son correctas y crea un graph-exp
-(define create-graph
-  (lambda (vers edges)
-    (if (valid-pairs? vers edges)
-        (graph-exp (vertices-exp vers)
-                   (edges-exp (convert-to-edges  edges)))
-        (eopl:error "Some edges are not in vertices")
-        )
-    )
-  )
-;valid-pairs? <list-of symbols> <list-of <list-ofsymbols>>->bool
-;Funcion que verifica si un lista de aristas es correcta, es correcta si
-;sus ejes estan en la lista de vertices
-(define valid-pairs?
-  (lambda (vers edges)
-    (cond((null? edges) #t)
-        ((and (member (caar edges)vers)
-              (member (cadr (car edges)) vers))
-         (valid-pairs? vers (cdr edges)))
-        (else #f)
-        )
-    )
-  )
-
 ;valid-rands-for-graph  <scheme-value> <scheme-value> -> bool
 ;Funcion que retorna 2 argumentos son validos para crear un grafo
 (define valid-rands-for-graph?
   (lambda  (vs es)
-    (if (or (and (vs-exp? vs) (es-exp? es)) (and (lista? vs) (lista? es) ))
+    (if (or (and (vs-exp? vs) (es-exp? es)) (and (lista? vs) (lista? es)))
         #t
         #f
         )
@@ -1190,7 +1128,7 @@ INDICES DE BLOQUES DEL CODIGO
     )
   )
 
-(define eds (edges-exp (list (edge-exp 'a 'b))))
+
 ; symbols->strings <list-of symbols> -> <list-of strings>
 ;Funcion que recibe una list de symbols y retorna una list con los
 ;symbols convertidos en strings
@@ -1199,23 +1137,6 @@ INDICES DE BLOQUES DEL CODIGO
     (map symbol->string l))
 )
 
-
-(define convert-list-string
-  (lambda (l)
-    (map symbols->strings l)
-  )
-)
-
-(define strings->symbols
-  (lambda (l)
-    (map string->symbol l)
-  )
-)
-
-(define convert-list-symbol
-(lambda (l)
-  (map strings->symbols l))
-)
 ;;add-edges-dtype:g-exp x List-> g-exp
 ;;usage: (add-edges-dtype grafo e)= resive un g-exp y una arista en forma de lista y si la arista no esta en las aristas del grafo entonces la funcion
 ;;crea un nuevo grafo con la arista insertada en el.
@@ -1799,7 +1720,6 @@ INDICES DE BLOQUES DEL CODIGO
 ;--------------------------tienen varios tipos-----------------------------------------
 (define proc-types-list
   (list
-   (proc-type (list generic-structure-type) generic-structure-type)
    (proc-type (list int-list-type) bool-type)
    (proc-type (list float-list-type) bool-type)
    (proc-type (list bool-list-type) bool-type)
@@ -1838,7 +1758,6 @@ INDICES DE BLOQUES DEL CODIGO
       (edges-type-exp () edges-type)
       (vertices-type-exp () vertices-type)
       (graph-type-exp () graph-type)
-      (generic-list-type() generic-structure-type)
       (list-int-type () int-list-type)
       (list-float-type () float-list-type)
       (list-bool-type () bool-list-type)
@@ -2280,12 +2199,11 @@ INDICES DE BLOQUES DEL CODIGO
 
       (make-g-primitive() (proc-type (list vertices-type edges-type) graph-type))
 
-      (primitiva-edges() (proc-type (list graph-type) generic-structure-type))
+      (primitiva-edges() (proc-type (list graph-type) edges-type))
 
       (primitiva-vertices() (proc-type (list graph-type) vertices-type))
 
-      (make-l-primitive() (list (proc-type (list generic-structure-type) generic-structure-type)
-                                (proc-type (list empty-list-type) empty-list-type)
+      (make-l-primitive() (list (proc-type (list empty-list-type) empty-list-type)
                                 (proc-type (list int-type) int-list-type)
                                 (proc-type (list float-type) float-list-type)
                                 (proc-type (list bool-type) bool-list-type)
@@ -2375,8 +2293,7 @@ INDICES DE BLOQUES DEL CODIGO
       
       (primitiva-append ()
                         (list
-                         (proc-type (list string-list-type generic-structure-type) generic-structure-type)
-                         (proc-type (list vertices-type vertices-type) generic-structure-type)
+                         (proc-type (list vertices-type vertices-type) vertices-type)
                          (proc-type (list edges-type edges-type) edges-type)
                          (proc-type (list empty-list-type int-list-type) int-list-type)
                          (proc-type (list empty-list-type float-list-type) float-list-type)
@@ -2773,69 +2690,9 @@ values-dict------values-dict({"daniel":20,"andres":29})
 set-dict---------app-b({"daniel":20,"andres":29} set-dict "daniel" 99)
 
 
-scan&parse de las expresiones
 
-(scan&parse "app-b(2 + 5)")
-(scan&parse " \" hola  \" ")
-(scan&parse " Si app-b(2 < 5){1}sino{2}")
-(scan&parse " declarar(@a) ")
-(scan&parse " funtion(int @a) add1(@a) ")
-(scan&parse " app@name(@name) ")
-(scan&parse "(1,2,3)")
-(scan&parse "[1,2,3]")
-(scan&parse "{ \"daniel\" :20,\"andres\":29}")
-(scan&parse " edge(@a,@b)")
-(scan&parse " edges(edge(@a,@b) edge(@c,@d))")
-(scan&parse " vers(@a,@b,@c,@d)")
-(scan&parse " graph(vers(@a,@b,@c,@d),edges(edge(@a,@b) edge(@c,@d)))")
-(scan&parse "BLOCK{app-b(2 + 3) app-b(8 * 3)}")
-(scan&parse "set @a = 2")
-(scan&parse "while(app-b(@a != 1))
-do(app-b(5 + 6))")
-(scan&parse "for(@a = 0;app-b(@a == 2);
-set @a = app-b(@a + 1))
-{2}")
-(scan&parse "switch(2){
-case 1: 1
-case 2: \"hola\"
-default: \"error\"}")
-(scan&parse "print(@a)")
-
-(scan&parse " declarar (
-int @area = 0;
-int @perimetro = 0;
-int @base = 5;
-int @altura = 7;
-){
-BLOCK{
-set @area = app-b(@base * @altura)
-set @perimetro = app-b(app-b(2 * @base) + app-b(2 * @altura))
-make-list(@area @perimetro)}
-} ")
-
-(scan&parse "LOCALS{
-(int->int)@factorial = funtion(int @n)
-             Si app-b(@n == 1) {1}
-             sino{app-b(@n *
-             app @factorial(app-b(@n ~ 1)))};
-int @a = 5;
-}{
-app @factorial(@a)} ")
-
-(scan&parse "GLOBALS{
-(int->int) @factorial = funtion(int @n)
-           Si app-b(@n == 1) {1}
-           sino{app-b(@n *
-           app @factorial(app-b(@n ~ 1)))};
-int @a = 5;
-}PROGRAM{
-int main(){
-app@factorial(@a)}
-}")
 **********************************SUSTENTACION***************************************
 *************************************************************************************
-
-
 
 Punto (2)
 
@@ -3027,8 +2884,9 @@ string @cadena2 = "cadena2";
 }
 
 punto(8)-------------------------------------------
-PARA QUE FUNCIONE CORRER (interpretador-sin-tipos)
-
+PARA QUE FUNCIONE EL PROGRAMA VAYA A LA LINEA: 589 y comente
+(type-of-program pgm) para desactivar
+el checkeo de tipos.
 
 void es el tipo vacio, no se usa para nada aqui, solo se puso, porque
 la gramatica del global requiere un tipo.
@@ -3052,7 +2910,9 @@ void @lista = (1,2,3,4,5,6);
 
 
 punto(9)------------------------------------------
-PARA QUE FUNCIONE CORRER (interpretador-sin-tipos)
+
+PARA QUE FUNCIONE VAYA A LA LINEA: 589 y comente (type-of-program pgm) para desactivar
+el checkeo de tipos.
 
 void es el tipo vacio, no se usa para nada aqui, solo se puso, porque
 la gramatica del global requiere un tipo.
@@ -3087,7 +2947,7 @@ GLOBALS{
 (int->bool) @esPar? = funtion(int @x) Si app-b(app-b(@x mod 2) == 0)
 {true} sino {false};
 }PROGRAM{
-    void main(){
+    int main(){
     for(@a = 1;app-b(@a < 5);set @a = app-b(@a + 1))
     {
       print(app@esPar?(@a))}
@@ -3095,7 +2955,8 @@ GLOBALS{
 }
 
 punto(11)---------------------------------------------
-PARA QUE FUNCIONE CORRER (interpretador-sin-tipos)
+PARA QUE FUNCIONE VAYA A LA LINEA: 589 y comente (type-of-program pgm) para desactivar
+el checkeo de tipos.
 
 void es el tipo vacio, no se usa para nada aqui, solo se puso, porque
 la gramatica del global requiere un tipo.
@@ -3146,36 +3007,11 @@ default: "Method_no_found"};
 }PROGRAM{
 void main(){
  LOCALS{
-void @miMoto1 = app@Moto();
-void @miMoto2 = app@Moto();
-void @miMoto3 = app@Moto();
+void @miMoto = app@Moto();
 }{
-
-app app@miMoto1("inicializate")(600,"honda","a2010")
-print("Moto1_marca_inicializada:")
-print(app app@miMoto1("getMarca")())
-print("seteando.......")
-app app@miMoto1("setMarca")("auteco")
-print("Moto1:")
-print(app app@miMoto1("getMarca")())
-
-
-app app@miMoto2("inicializate")(750,"kawasaki","a2014")
-print("Moto2_marca_inicializada:")
-print(app app@miMoto2("getMarca")())
-print("seteando.......")
-app app@miMoto2("setMarca")("yamaha")
-print("Moto2:")
-print(app app@miMoto2("getMarca")())
-
-app app@miMoto3("inicializate")(900,"KTM","a2018")
-print("Moto3_marca_inicializada:")
-print(app app@miMoto3("getMarca")())
-print("seteando.......")
-app app@miMoto3("setMarca")("Ducati")
-print("Moto3:")
-print(app app@miMoto3("getMarca")())
-}}}
+app app@miMoto("inicializate")(750,"honda","a2010")
+app app@miMoto("setMarca")("kawasaki")
+app app@miMoto("getMarca")()}}}
 
 punto(12)---------------------------------------------
 GLOBALS{
@@ -3234,11 +3070,9 @@ PROGRAM{
 }
 
 punto(13)------------------------------------
-PARA QUE FUNCIONE CORRER (interpretador-sin-tipos)
-
 GLOBALS{
 graph @graph1 = make-graph(vers(@a,@b) edges(edge(@a,@b)));
-graph @graph2 = make-graph(vers(@a,@d) edges(edge(@a,@d)));
+graph @graph2 = make-graph(vers(@c,@d) edges(edge(@c,@d)));
 (graph*graph->graph) @unionG = funtion(graph @g1,graph @g2)
 make-graph(
 app-b(vertices(@g1) append vertices(@g2))
@@ -3248,42 +3082,5 @@ app-b(edgess(@g1) append edgess(@g2))
    graph main(){
    app@unionG(@graph1,@graph2)
    }
-}
-
-GLOBALS{
-graph @graph1 = make-graph(vers(@a,@b,@c) edges(edge(@a,@b) edge(@c,@b)));
-graph @graph2 = make-graph(vers(@c,@d,@a,@b) edges(edge(@a,@d) edge(@c,@b) edge(@a,@b)));
-
-(string*list<string>->bool) @in? = funtion(string @v , list<string> @l)
-Si empty?(@l) {false} sino
-{Si app-b(@v == head(@l)) {true} sino {app@in?(@v,tail(@l))}};
-
-
-void @intersect = funtion(list<string> @l1,list<generic> @l2)
-Si empty?(@l1) {list} sino
-{Si app@in?(head(@l1),@l2) {app-b(make-list(head(@l1)) append
-                            app@intersect(tail(@l1),@l2))}
-sino {app@intersect(tail(@l1),@l2)}};
-
-void @convertArist = funtion(list<string> @l1)
-Si empty?(@l1) {list} sino {app-b(make-list(make-list(head(@l1) head(tail(@l1))))
-append app@convertArist(tail(tail(@l1)))
-)};
-
-(graph*graph->graph) @intersectG = funtion(graph @g1,graph @g2)
-LOCALS{
-list<string> @vertices1 = vertices(@g1);
-list<string> @vertices2 = vertices(@g2);
-list<generic> @edges1 = edgess(@g1);
-list<generic> @edges2 = edgess(@g2);
-}{make-graph(
-app@intersect(@vertices1,@vertices2)
-app@convertArist(app@intersect(@edges1,@edges2)))
-};
-
-}PROGRAM{
-   list<string> main(){
-   app@intersectG(@graph1,@graph2)
-   }  
 }
 |#
